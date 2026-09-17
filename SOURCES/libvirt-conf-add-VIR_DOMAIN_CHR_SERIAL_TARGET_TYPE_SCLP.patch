@@ -1,0 +1,605 @@
+From f93cc7753900a7ff80a32dae2fd3337939909b86 Mon Sep 17 00:00:00 2001
+Message-Id: <f93cc7753900a7ff80a32dae2fd3337939909b86@dist-git>
+From: Pino Toscano <ptoscano@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:15 +0100
+Subject: [PATCH] conf: add VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP
+
+Introduce specific a target types with two models for the console
+devices (sclp and sclplm) used in s390 and s390x guests, so isa-serial
+is no more used for them.
+
+This makes <serial> usable on s390 and s390x guests, with at most only
+a single sclpconsole and one sclplmconsole devices usable in a single
+guest (due to limitations in QEMU, which will enforce already at
+runtime).
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 21332bf6587c23409fecb06ab81dbc14dd52c10b)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in                          | 19 ++++++++----
+ docs/schemas/domaincommon.rng                      |  3 ++
+ src/conf/domain_conf.c                             |  4 +++
+ src/conf/domain_conf.h                             |  3 ++
+ src/qemu/qemu_command.c                            |  6 ++++
+ src/qemu/qemu_domain.c                             | 20 +++++++++++++
+ src/qemu/qemu_domain_address.c                     |  1 +
+ .../qemuxml2argv-s390-serial-2.args                | 24 +++++++++++++++
+ .../qemuxml2argv-s390-serial-2.xml                 | 19 ++++++++++++
+ .../qemuxml2argv-s390-serial-console.args          | 25 ++++++++++++++++
+ .../qemuxml2argv-s390-serial-console.xml           | 15 ++++++++++
+ .../qemuxml2argvdata/qemuxml2argv-s390-serial.args | 22 ++++++++++++++
+ .../qemuxml2argvdata/qemuxml2argv-s390-serial.xml  | 14 +++++++++
+ tests/qemuxml2argvtest.c                           | 16 ++++++++++
+ .../qemuxml2xmlout-s390-serial-2.xml               | 33 +++++++++++++++++++++
+ .../qemuxml2xmlout-s390-serial-console.xml         | 34 ++++++++++++++++++++++
+ .../qemuxml2xmlout-s390-serial.xml                 | 28 ++++++++++++++++++
+ tests/qemuxml2xmltest.c                            |  6 ++++
+ 18 files changed, 286 insertions(+), 6 deletions(-)
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-s390-serial.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-2.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial.xml
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index 87389f4e73..62dd6e1ec4 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -6463,8 +6463,9 @@ qemu-kvm -net nic,model=? /dev/null
+       with x86 guests), <code>usb-serial</code> (usable whenever USB support
+       is available) and <code>pci-serial</code> (usable whenever PCI support
+       is available); <span class="since">since 3.10.0</span>,
+-      <code>spapr-vio-serial</code> (usable with ppc64/pseries guests) and
+-      <code>system-serial</code> (usable with aarch64/virt guests) are
++      <code>spapr-vio-serial</code> (usable with ppc64/pseries guests),
++      <code>system-serial</code> (usable with aarch64/virt guests) and
++      <code>sclp-serial</code> (usable with s390 and s390x guests) are
+       available as well.
+     </p>
+ 
+@@ -6478,7 +6479,9 @@ qemu-kvm -net nic,model=? /dev/null
+       (usable with the <code>pci-serial</code> target type);
+       <code>spapr-vty</code> (usable with the <code>spapr-vio-serial</code>
+       target type); <code>pl011</code> (usable with the
+-      <code>system-serial</code> target type).
++      <code>system-serial</code> target type); <code>sclpconsole</code> and
++      <code>sclplmconsole</code> (usable with the <code>sclp-serial</code>
++      target type).
+     </p>
+ 
+     <p>
+@@ -6493,7 +6496,8 @@ qemu-kvm -net nic,model=? /dev/null
+       <code>isa-serial</code>), <code>usb</code> (for <code>usb-serial</code>),
+       <code>pci</code> (for <code>pci-serial</code>) and <code>spapr-vio</code>
+       (for <code>spapr-vio-serial</code>). The <code>system-serial</code>
+-      target type doesn't support specifying an address.
++      and <code>sclp-serial</code> target types don't support specifying an
++      address.
+     </p>
+ 
+     <p>
+@@ -6541,8 +6545,11 @@ qemu-kvm -net nic,model=? /dev/null
+       <code>virtio</code> (usable whenever VirtIO support is available);
+       <code>xen</code>, <code>lxc</code>, <code>uml</code> and
+       <code>openvz</code> (available when the corresponding hypervisor is in
+-      use); <code>sclp</code> and <code>sclplm</code> (usable for s390 and
+-      s390x QEMU guests).
++      use). <code>sclp</code> and <code>sclplm</code> (usable for s390 and
++      s390x QEMU guests) are supported for compatibility reasons but should
++      not be used for new guests: use the <code>sclpconsole</code> and
++      <code>sclplmconsole</code> target models, respectively, with the
++      <code>serial</code> element instead.
+     </p>
+ 
+     <p>
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 957eae2832..5576128db5 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -3573,6 +3573,7 @@
+         <value>pci-serial</value>
+         <value>spapr-vio-serial</value>
+         <value>system-serial</value>
++        <value>sclp-serial</value>
+       </choice>
+     </attribute>
+   </define>
+@@ -3586,6 +3587,8 @@
+           <value>pci-serial</value>
+           <value>spapr-vty</value>
+           <value>pl011</value>
++          <value>sclpconsole</value>
++          <value>sclplmconsole</value>
+         </choice>
+       </attribute>
+     </element>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 32089df3c2..c58dae197c 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -447,6 +447,7 @@ VIR_ENUM_IMPL(virDomainChrSerialTarget,
+               "pci-serial",
+               "spapr-vio-serial",
+               "system-serial",
++              "sclp-serial",
+ );
+ 
+ VIR_ENUM_IMPL(virDomainChrChannelTarget,
+@@ -476,6 +477,8 @@ VIR_ENUM_IMPL(virDomainChrSerialTargetModel,
+               "pci-serial",
+               "spapr-vty",
+               "pl011",
++              "sclpconsole",
++              "sclplmconsole",
+ );
+ 
+ VIR_ENUM_IMPL(virDomainChrDevice, VIR_DOMAIN_CHR_DEVICE_TYPE_LAST,
+@@ -4066,6 +4069,7 @@ virDomainDefAddConsoleCompat(virDomainDefPtr def)
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE: {
+ 
+             /* Create a stub console to match the serial port.
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index d6febf3059..0e97f0437e 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1079,6 +1079,7 @@ typedef enum {
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP,
+ 
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST
+ } virDomainChrSerialTargetType;
+@@ -1113,6 +1114,8 @@ typedef enum {
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE,
+ 
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST
+ } virDomainChrSerialTargetModel;
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 483eee6056..a2cfb3d4a3 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9229,6 +9229,10 @@ qemuChrSerialTargetModelToCaps(virDomainChrSerialTargetModel targetModel)
+         return QEMU_CAPS_DEVICE_PCI_SERIAL;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
+         return QEMU_CAPS_DEVICE_SPAPR_VTY;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE:
++        return QEMU_CAPS_DEVICE_SCLPCONSOLE;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
++        return QEMU_CAPS_DEVICE_SCLPLMCONSOLE;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+@@ -10355,6 +10359,8 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
+ 
+         caps = qemuChrSerialTargetModelToCaps(serial->targetModel);
+ 
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 2fc173fa45..91c0e163e1 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3469,6 +3469,7 @@ qemuDomainChrSerialTargetTypeToAddressType(int targetType)
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+         return VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         break;
+@@ -3492,6 +3493,9 @@ qemuDomainChrSerialTargetModelToTargetType(int targetModel)
+         return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
+         return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+         break;
+@@ -3529,6 +3533,7 @@ qemuDomainChrTargetDefValidate(const virDomainChrDef *chr)
+             break;
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
+             if (chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                                _("Target type '%s' cannot have an "
+@@ -3550,6 +3555,8 @@ qemuDomainChrTargetDefValidate(const virDomainChrDef *chr)
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
+ 
+             expected = qemuDomainChrSerialTargetModelToTargetType(chr->targetModel);
+ 
+@@ -3612,6 +3619,13 @@ qemuDomainChrDefValidate(const virDomainChrDef *dev,
+             isCompatible = false;
+         }
+ 
++        if (!ARCH_IS_S390(def->os.arch) &&
++            (dev->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP ||
++             dev->targetModel == VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE ||
++             dev->targetModel == VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE)) {
++            isCompatible = false;
++        }
++
+         if (!isCompatible) {
+             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                            _("Serial device with target type '%s' and "
+@@ -4265,6 +4279,8 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+             chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO;
+         } else if (qemuDomainIsVirt(def)) {
+             chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM;
++        } else if (ARCH_IS_S390(def->os.arch)) {
++            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP;
+         }
+     }
+ 
+@@ -4287,6 +4303,9 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
+             chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011;
+             break;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
++            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE;
++            break;
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             /* Nothing to do */
+@@ -5210,6 +5229,7 @@ qemuDomainDefFormatBufInternal(virQEMUDriverPtr driver,
+                 case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+                 case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
+                 case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
+                 case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+                 case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+                     /* Nothing to do */
+diff --git a/src/qemu/qemu_domain_address.c b/src/qemu/qemu_domain_address.c
+index db9656a3a5..a40cdb3993 100644
+--- a/src/qemu/qemu_domain_address.c
++++ b/src/qemu/qemu_domain_address.c
+@@ -785,6 +785,7 @@ qemuDomainDeviceCalculatePCIConnectFlags(virDomainDeviceDefPtr dev,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             return 0;
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.args b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.args
+new file mode 100644
+index 0000000000..346dcd16bb
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.args
+@@ -0,0 +1,24 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-s390x \
++-name QEMUGuest1 \
++-S \
++-M s390-ccw-virtio \
++-m 214 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid c7a5fdbd-edaf-9455-926a-d65c16db1809 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-QEMUGuest1/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-chardev pty,id=charserial0 \
++-device sclpconsole,chardev=charserial0,id=serial0 \
++-chardev pty,id=charserial1 \
++-device sclplmconsole,chardev=charserial1,id=serial1
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.xml b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.xml
+new file mode 100644
+index 0000000000..b6eb377c98
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-2.xml
+@@ -0,0 +1,19 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch="s390x" machine="s390-ccw-virtio">hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <serial type='pty'/>
++    <serial type='pty'>
++      <target type='sclp-serial'>
++        <model name='sclplmconsole'/>
++      </target>
++    </serial>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
+new file mode 100644
+index 0000000000..c405fb59ee
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
+@@ -0,0 +1,25 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-s390x \
++-name QEMUGuest1 \
++-S \
++-M s390-ccw-virtio \
++-m 214 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid c7a5fdbd-edaf-9455-926a-d65c16db1809 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-QEMUGuest1/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-device virtio-serial-ccw,id=virtio-serial0,devno=fe.0.0000 \
++-chardev pty,id=charserial0 \
++-device sclpconsole,chardev=charserial0,id=serial0 \
++-chardev pty,id=charconsole1 \
++-device virtconsole,chardev=charconsole1,id=console1
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.xml b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.xml
+new file mode 100644
+index 0000000000..c841f1f245
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.xml
+@@ -0,0 +1,15 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch="s390x" machine="s390-ccw-virtio">hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <serial type='pty'/>
++    <console type='pty'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.args b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.args
+new file mode 100644
+index 0000000000..20968f7945
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.args
+@@ -0,0 +1,22 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-s390x \
++-name QEMUGuest1 \
++-S \
++-M s390-ccw-virtio \
++-m 214 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid c7a5fdbd-edaf-9455-926a-d65c16db1809 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-QEMUGuest1/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-chardev pty,id=charserial0 \
++-device sclpconsole,chardev=charserial0,id=serial0
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.xml b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.xml
+new file mode 100644
+index 0000000000..55b45bac00
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial.xml
+@@ -0,0 +1,14 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch="s390x" machine="s390-ccw-virtio">hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <serial type='pty'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 656b8c0995..852525e7b4 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -2049,6 +2049,22 @@ mymain(void)
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_VIRTIO_CCW,
+             QEMU_CAPS_VIRTIO_S390);
++    DO_TEST("s390-serial",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_VIRTIO_CCW,
++            QEMU_CAPS_VIRTIO_S390,
++            QEMU_CAPS_DEVICE_SCLPCONSOLE);
++    DO_TEST("s390-serial-2",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_VIRTIO_CCW,
++            QEMU_CAPS_VIRTIO_S390,
++            QEMU_CAPS_DEVICE_SCLPCONSOLE,
++            QEMU_CAPS_DEVICE_SCLPLMCONSOLE);
++    DO_TEST("s390-serial-console",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_VIRTIO_CCW,
++            QEMU_CAPS_VIRTIO_S390,
++            QEMU_CAPS_DEVICE_SCLPCONSOLE);
+ 
+     DO_TEST("ppc-dtb",
+             QEMU_CAPS_KVM,
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-2.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-2.xml
+new file mode 100644
+index 0000000000..bb9ca30f1d
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-2.xml
+@@ -0,0 +1,33 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='s390x' machine='s390-ccw-virtio'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <serial type='pty'>
++      <target type='sclp-serial' port='0'>
++        <model name='sclpconsole'/>
++      </target>
++    </serial>
++    <serial type='pty'>
++      <target type='sclp-serial' port='1'>
++        <model name='sclplmconsole'/>
++      </target>
++    </serial>
++    <console type='pty'>
++      <target type='serial' port='0'/>
++    </console>
++    <memballoon model='none'/>
++    <panic model='s390'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
+new file mode 100644
+index 0000000000..db3023b7a6
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
+@@ -0,0 +1,34 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='s390x' machine='s390-ccw-virtio'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <controller type='virtio-serial' index='0'>
++      <address type='ccw' cssid='0xfe' ssid='0x0' devno='0x0000'/>
++    </controller>
++    <serial type='pty'>
++      <target type='sclp-serial' port='0'>
++        <model name='sclpconsole'/>
++      </target>
++    </serial>
++    <console type='pty'>
++      <target type='serial' port='0'/>
++    </console>
++    <console type='pty'>
++      <target type='virtio' port='0'/>
++    </console>
++    <memballoon model='none'/>
++    <panic model='s390'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial.xml
+new file mode 100644
+index 0000000000..9c9b4dd27a
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial.xml
+@@ -0,0 +1,28 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='s390x' machine='s390-ccw-virtio'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-s390x</emulator>
++    <serial type='pty'>
++      <target type='sclp-serial' port='0'>
++        <model name='sclpconsole'/>
++      </target>
++    </serial>
++    <console type='pty'>
++      <target type='serial' port='0'/>
++    </console>
++    <memballoon model='none'/>
++    <panic model='s390'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmltest.c b/tests/qemuxml2xmltest.c
+index bd18507bb6..8766646738 100644
+--- a/tests/qemuxml2xmltest.c
++++ b/tests/qemuxml2xmltest.c
+@@ -1155,6 +1155,12 @@ mymain(void)
+             QEMU_CAPS_VIRTIO_CCW, QEMU_CAPS_VIRTIO_S390);
+     DO_TEST("s390-panic-no-address",
+             QEMU_CAPS_VIRTIO_CCW, QEMU_CAPS_VIRTIO_S390);
++    DO_TEST("s390-serial",
++            QEMU_CAPS_VIRTIO_CCW, QEMU_CAPS_VIRTIO_S390);
++    DO_TEST("s390-serial-2",
++            QEMU_CAPS_VIRTIO_CCW, QEMU_CAPS_VIRTIO_S390);
++    DO_TEST("s390-serial-console",
++            QEMU_CAPS_VIRTIO_CCW, QEMU_CAPS_VIRTIO_S390);
+ 
+     DO_TEST("pcihole64", NONE);
+     DO_TEST("pcihole64-gib", NONE);
+-- 
+2.15.1
+

@@ -1,0 +1,159 @@
+From 4f4db541098163a2061cd63ce6bfb83ce2ed38b5 Mon Sep 17 00:00:00 2001
+Message-Id: <4f4db541098163a2061cd63ce6bfb83ce2ed38b5@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:22:58 +0100
+Subject: [PATCH] conf: Introduce VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE
+
+This is the first step in getting rid of the assumption that
+isa-serial is the default target type for serial devices.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 6385c8c14233388d929ed62717684e7352543416)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c         |  8 +++++---
+ src/conf/domain_conf.h         |  3 ++-
+ src/qemu/qemu_command.c        | 13 +++++++++++++
+ src/qemu/qemu_domain.c         | 21 +++++++++++++++++++++
+ src/qemu/qemu_domain_address.c |  1 +
+ 5 files changed, 42 insertions(+), 4 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 41674a85af..3a5ecd3a9d 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -441,6 +441,7 @@ VIR_ENUM_IMPL(virDomainChrDeviceState, VIR_DOMAIN_CHR_DEVICE_STATE_LAST,
+ 
+ VIR_ENUM_IMPL(virDomainChrSerialTarget,
+               VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST,
++              "none",
+               "isa-serial",
+               "usb-serial",
+               "pci-serial")
+@@ -4025,7 +4026,7 @@ virDomainDefAddConsoleCompat(virDomainDefPtr def)
+ 
+             /* modify it to be a serial port */
+             def->serials[0]->deviceType = VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL;
+-            def->serials[0]->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++            def->serials[0]->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
+             def->serials[0]->target.port = 0;
+         } else {
+             /* if the console source doesn't match */
+@@ -4049,7 +4050,8 @@ virDomainDefAddConsoleCompat(virDomainDefPtr def)
+                def->serials[0]->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL) {
+ 
+         switch ((virDomainChrSerialTargetType) def->serials[0]->targetType) {
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA: {
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE: {
+ 
+             /* Create a stub console to match the serial port.
+              * console[0] either does not exist
+@@ -11485,7 +11487,7 @@ virDomainChrDefaultTargetType(int devtype)
+         return VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_NONE;
+ 
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL:
+-        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
+ 
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL:
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_LAST:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 09635763a1..9502573b34 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1073,7 +1073,8 @@ typedef enum {
+ } virDomainChrDeviceType;
+ 
+ typedef enum {
+-    VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA = 0,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE = 0,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI,
+ 
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 3d970ed9d1..d593e60198 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9255,6 +9255,14 @@ qemuChrIsPlatformDevice(const virDomainDef *def,
+             return true;
+     }
+ 
++    /* If we got all the way here and we're still stuck with the default
++     * target type for a serial device, it means we have no clue what kind of
++     * device we're talking about and we must treat it as a platform device. */
++    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
++        chr->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE) {
++        return true;
++    }
++
+     return false;
+ }
+ 
+@@ -10378,7 +10386,12 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+             }
+             break;
+ 
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
++            /* Except from _LAST, which is just a guard value and will never
++             * be used, all of the above are platform devices, which means
++             * qemuBuildSerialCommandLine() will have taken the appropriate
++             * branch and we will not have ended up here. */
+             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                            _("Invalid target type for serial device"));
+             goto error;
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index b15d994774..e43f7496c2 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -4095,6 +4095,27 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+         chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_VIRTIO;
+     }
+ 
++    /* Historically, isa-serial and the default matched, so in order to
++     * maintain backwards compatibility we map them here. The actual default
++     * will be picked below based on the architecture and machine type. */
++    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
++        chr->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA) {
++        chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
++    }
++
++    /* Set the default serial type */
++    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
++        chr->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE) {
++        if (ARCH_IS_X86(def->os.arch)) {
++            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++        } else if (qemuDomainIsPSeries(def)) {
++            /* Setting TYPE_ISA here is just a temporary hack to reduce test
++             * suite churn. Later on we will have a proper serial type for
++             * pSeries and this line will be updated accordingly. */
++            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++        }
++    }
++
+     /* clear auto generated unix socket path for inactive definitions */
+     if (parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE) {
+         if (qemuDomainChrDefDropDefaultPath(chr, driver) < 0)
+diff --git a/src/qemu/qemu_domain_address.c b/src/qemu/qemu_domain_address.c
+index 7f4ac0f45a..989c0e6c93 100644
+--- a/src/qemu/qemu_domain_address.c
++++ b/src/qemu/qemu_domain_address.c
+@@ -782,6 +782,7 @@ qemuDomainDeviceCalculatePCIConnectFlags(virDomainDeviceDefPtr dev,
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             return 0;
+         }
+-- 
+2.15.1
+

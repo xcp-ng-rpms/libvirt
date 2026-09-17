@@ -1,0 +1,359 @@
+From b4c36bdf3ed28042338716cc1add921bd4f54e2d Mon Sep 17 00:00:00 2001
+Message-Id: <b4c36bdf3ed28042338716cc1add921bd4f54e2d@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:21 +0100
+Subject: [PATCH] tests: Add resctrl-skx-twocaches test case to vircaps2xmltest
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+This doesn't add very much value for now, but future test for virresctrl will
+take information from vircaps2xmldata (since it is dependent on the same info
+then why duplicate it) and this particular use case helps us cover bit more of
+the code regarding proper formatting and handling errors.  And one more test for
+vircaps2xmltest doesn't hurt either.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit d807014563bb25b466d5dbf718f023c18e762a4b)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ .../resctrl/info/L3/cbm_mask                       |  1 +
+ .../resctrl/info/L3/min_cbm_bits                   |  1 +
+ .../resctrl/info/L3/num_closids                    |  1 +
+ .../linux-resctrl-skx-twocaches/resctrl/schemata   |  1 +
+ .../resctrl/some_reservation/schemata              |  1 +
+ .../system/cpu/cpu0/cache/index0/id                |  1 +
+ .../system/cpu/cpu0/cache/index0/level             |  1 +
+ .../system/cpu/cpu0/cache/index0/shared_cpu_list   |  1 +
+ .../system/cpu/cpu0/cache/index0/shared_cpu_map    |  1 +
+ .../system/cpu/cpu0/cache/index0/size              |  1 +
+ .../system/cpu/cpu0/cache/index0/type              |  1 +
+ .../system/cpu/cpu0/cache/index1/id                |  1 +
+ .../system/cpu/cpu0/cache/index1/level             |  1 +
+ .../system/cpu/cpu0/cache/index1/shared_cpu_list   |  1 +
+ .../system/cpu/cpu0/cache/index1/shared_cpu_map    |  1 +
+ .../system/cpu/cpu0/cache/index1/size              |  1 +
+ .../system/cpu/cpu0/cache/index1/type              |  1 +
+ .../system/cpu/cpu0/online                         |  1 +
+ .../system/cpu/cpu0/topology/core_id               |  1 +
+ .../system/cpu/cpu0/topology/core_siblings         |  1 +
+ .../system/cpu/cpu0/topology/core_siblings_list    |  1 +
+ .../system/cpu/cpu0/topology/physical_package_id   |  1 +
+ .../system/cpu/cpu0/topology/thread_siblings       |  1 +
+ .../system/cpu/cpu0/topology/thread_siblings_list  |  1 +
+ .../linux-resctrl-skx-twocaches/system/cpu/online  |  1 +
+ .../linux-resctrl-skx-twocaches/system/cpu/present |  1 +
+ .../system/node/node0/cpu0                         |  1 +
+ .../system/node/node0/cpulist                      |  1 +
+ .../system/node/node0/cpumap                       |  1 +
+ .../system/node/node0/distance                     |  1 +
+ .../linux-resctrl-skx-twocaches/system/node/online |  1 +
+ .../vircaps-x86_64-resctrl-skx-twocaches.xml       | 34 ++++++++++++++++++++++
+ tests/vircaps2xmltest.c                            |  1 +
+ 33 files changed, 66 insertions(+)
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/cbm_mask
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/min_cbm_bits
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/num_closids
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/some_reservation/schemata
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/id
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/level
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_list
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_map
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/size
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/type
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/id
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/level
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_list
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_map
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/size
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/type
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/online
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_id
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings_list
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/physical_package_id
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings_list
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/online
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/present
+ create mode 120000 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpu0
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpulist
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpumap
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/distance
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/online
+ create mode 100644 tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx-twocaches.xml
+
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/cbm_mask b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/cbm_mask
+new file mode 100644
+index 0000000000..d482bbb269
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/cbm_mask
+@@ -0,0 +1 @@
++7ff
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/min_cbm_bits b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/min_cbm_bits
+new file mode 100644
+index 0000000000..d00491fd7e
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/min_cbm_bits
+@@ -0,0 +1 @@
++1
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/num_closids b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/num_closids
+new file mode 100644
+index 0000000000..b6a7d89c68
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/info/L3/num_closids
+@@ -0,0 +1 @@
++16
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
+new file mode 100644
+index 0000000000..691fbaf887
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
+@@ -0,0 +1 @@
++L3:0=0f0;1=000
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/some_reservation/schemata b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/some_reservation/schemata
+new file mode 100644
+index 0000000000..e76adc896c
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/some_reservation/schemata
+@@ -0,0 +1 @@
++L3:0=70e;1=3ff
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/id b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/id
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/id
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/level b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/level
+new file mode 100644
+index 0000000000..00750edc07
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/level
+@@ -0,0 +1 @@
++3
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_list b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_list
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_list
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_map b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_map
+new file mode 100644
+index 0000000000..5325a8dff7
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/shared_cpu_map
+@@ -0,0 +1 @@
++001
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/size b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/size
+new file mode 100644
+index 0000000000..d23da60c12
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/size
+@@ -0,0 +1 @@
++33M
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/type b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/type
+new file mode 100644
+index 0000000000..e4fd9dccda
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index0/type
+@@ -0,0 +1 @@
++Unified
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/id b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/id
+new file mode 100644
+index 0000000000..d00491fd7e
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/id
+@@ -0,0 +1 @@
++1
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/level b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/level
+new file mode 100644
+index 0000000000..00750edc07
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/level
+@@ -0,0 +1 @@
++3
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_list b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_list
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_list
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_map b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_map
+new file mode 100644
+index 0000000000..5325a8dff7
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/shared_cpu_map
+@@ -0,0 +1 @@
++001
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/size b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/size
+new file mode 100644
+index 0000000000..d23da60c12
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/size
+@@ -0,0 +1 @@
++33M
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/type b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/type
+new file mode 100644
+index 0000000000..e4fd9dccda
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/cache/index1/type
+@@ -0,0 +1 @@
++Unified
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/online b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/online
+new file mode 100644
+index 0000000000..d00491fd7e
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/online
+@@ -0,0 +1 @@
++1
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_id b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_id
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_id
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings
+new file mode 100644
+index 0000000000..5325a8dff7
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings
+@@ -0,0 +1 @@
++001
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings_list b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings_list
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/core_siblings_list
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/physical_package_id b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/physical_package_id
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/physical_package_id
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings
+new file mode 100644
+index 0000000000..5325a8dff7
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings
+@@ -0,0 +1 @@
++001
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings_list b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings_list
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/cpu0/topology/thread_siblings_list
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/online b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/online
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/online
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/present b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/present
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/cpu/present
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpu0 b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpu0
+new file mode 120000
+index 0000000000..c841bea28b
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpu0
+@@ -0,0 +1 @@
++../../cpu/cpu0
+\ No newline at end of file
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpulist b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpulist
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpulist
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpumap b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpumap
+new file mode 100644
+index 0000000000..5325a8dff7
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/cpumap
+@@ -0,0 +1 @@
++001
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/distance b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/distance
+new file mode 100644
+index 0000000000..f599e28b8a
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/node0/distance
+@@ -0,0 +1 @@
++10
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/online b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/online
+new file mode 100644
+index 0000000000..573541ac97
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/system/node/online
+@@ -0,0 +1 @@
++0
+diff --git a/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx-twocaches.xml b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx-twocaches.xml
+new file mode 100644
+index 0000000000..d18665b24f
+--- /dev/null
++++ b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx-twocaches.xml
+@@ -0,0 +1,34 @@
++<capabilities>
++
++  <host>
++    <cpu>
++      <arch>x86_64</arch>
++    </cpu>
++    <power_management/>
++    <migration_features>
++      <live/>
++    </migration_features>
++    <topology>
++      <cells num='1'>
++        <cell id='0'>
++          <memory unit='KiB'>1048576</memory>
++          <pages unit='KiB' size='4'>2048</pages>
++          <pages unit='KiB' size='2048'>4096</pages>
++          <pages unit='KiB' size='1048576'>6144</pages>
++          <cpus num='1'>
++            <cpu id='0' socket_id='0' core_id='0' siblings='0'/>
++          </cpus>
++        </cell>
++      </cells>
++    </topology>
++    <cache>
++      <bank id='0' level='3' type='both' size='33' unit='MiB' cpus='0'>
++        <control granularity='3' unit='MiB' type='both' maxAllocs='16'/>
++      </bank>
++      <bank id='1' level='3' type='both' size='33' unit='MiB' cpus='0'>
++        <control granularity='3' unit='MiB' type='both' maxAllocs='16'/>
++      </bank>
++    </cache>
++  </host>
++
++</capabilities>
+diff --git a/tests/vircaps2xmltest.c b/tests/vircaps2xmltest.c
+index c0a67858fe..9ee9bf9f95 100644
+--- a/tests/vircaps2xmltest.c
++++ b/tests/vircaps2xmltest.c
+@@ -121,6 +121,7 @@ mymain(void)
+     DO_TEST_FULL("resctrl", VIR_ARCH_X86_64, true, true, true);
+     DO_TEST_FULL("resctrl-cdp", VIR_ARCH_X86_64, true, true, true);
+     DO_TEST_FULL("resctrl-skx", VIR_ARCH_X86_64, true, true, true);
++    DO_TEST_FULL("resctrl-skx-twocaches", VIR_ARCH_X86_64, true, true, true);
+ 
+     return ret;
+ }
+-- 
+2.16.1
+

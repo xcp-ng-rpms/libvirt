@@ -1,0 +1,43 @@
+From a921cd57872bf1ed798df6c7268d07c29cba9e32 Mon Sep 17 00:00:00 2001
+Message-Id: <a921cd57872bf1ed798df6c7268d07c29cba9e32@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Tue, 30 Jan 2018 13:02:02 +0100
+Subject: [PATCH] storage: util: Properly ignore errors when backing volume is
+ inaccessible
+
+Commit 000e9504559 tried to fix improper bracketing when refreshing disk
+volume stats for a backing volume. Unfortunately the condition is still
+wrong as in cases as the backing store being inaccessible
+storageBackendUpdateVolTargetInfo returns -2 if instructed to ignore
+errors. The condition does not take this into account.
+
+Dumping XML of a volume which has inacessible backing store would then
+result into:
+
+ # virsh vol-dumpxml http.img --pool default
+ error: An error occurred, but the cause is unknown
+
+Properly ignore -2 for backing volumes.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1540022
+(cherry picked from commit b2c5f28a72465bf047311828c8c66112c8ca84e5)
+---
+ src/storage/storage_util.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/storage/storage_util.c b/src/storage/storage_util.c
+index 9e1b63a436..61a87b37b6 100644
+--- a/src/storage/storage_util.c
++++ b/src/storage/storage_util.c
+@@ -1918,7 +1918,7 @@ virStorageBackendUpdateVolInfo(virStorageVolDefPtr vol,
+                                                  withBlockVolFormat,
+                                                  VIR_STORAGE_VOL_OPEN_DEFAULT |
+                                                  VIR_STORAGE_VOL_OPEN_NOERROR,
+-                                                 readflags)) < 0)
++                                                 readflags)) == -1)
+         return ret;
+ 
+     return 0;
+-- 
+2.16.1
+

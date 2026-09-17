@@ -1,0 +1,38 @@
+From 230fcf5bfaf2b17313fe255a09bfa79c8ea9ae8a Mon Sep 17 00:00:00 2001
+Message-Id: <230fcf5bfaf2b17313fe255a09bfa79c8ea9ae8a@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:35 +0100
+Subject: [PATCH] util: Check for empty allocation instead of just NULL pointer
+
+When working on the CAT series one of the changes was that the pointer got
+allocated in another part of the code, even when resctrl was not available on
+the host system.  However this one particular place neglected that so it needs
+to be fixed in order to get the proper error message when requesting
+<cachetune/> on HW with no support for it.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit bd5d07425de504c571d6d47ace8602fa86c1a1c8)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 754820ee46..03218a481d 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -1472,7 +1472,7 @@ virResctrlAllocCreate(virResctrlInfoPtr resctrl,
+     if (!alloc)
+         return 0;
+ 
+-    if (!resctrl) {
++    if (virResctrlInfoIsEmpty(resctrl)) {
+         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                        _("Resource control is not supported on this host"));
+         return -1;
+-- 
+2.16.1
+

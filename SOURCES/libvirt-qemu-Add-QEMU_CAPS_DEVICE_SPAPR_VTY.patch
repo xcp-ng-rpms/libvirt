@@ -1,0 +1,195 @@
+From a8befcda79640ae13c9787cb3be54ca2ee861077 Mon Sep 17 00:00:00 2001
+Message-Id: <a8befcda79640ae13c9787cb3be54ca2ee861077@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:22:51 +0100
+Subject: [PATCH] qemu: Add QEMU_CAPS_DEVICE_SPAPR_VTY
+
+Up until now we assumed the spapr-vty device would always be
+present, which is not very nice. Check for its availability before
+using it instead.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 87eabeb17d637b753dbb1e63e417e25bbd0f7d61)
+
+ Conflicts:
+	src/qemu/qemu_capabilities.c
+	src/qemu/qemu_capabilities.h
+	tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+	tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+
+	Insert the new capability in the right place, in both
+	declarations and caps.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                     |  3 ++-
+ src/qemu/qemu_capabilities.h                     |  2 +-
+ src/qemu/qemu_command.c                          |  6 ++++++
+ tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml |  1 +
+ tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml  |  1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml  |  1 +
+ tests/qemuxml2argvtest.c                         | 12 ++++++++++++
+ 7 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 2f41e076cb..0defa9a3e4 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -445,7 +445,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "virtio-blk.num-queues",
+               "machine.pseries.resize-hpt",
+ 
+-
++              "spapr-vty",
+ 
+               /* 275 */
+ 
+@@ -1679,6 +1679,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "pcie-root-port", QEMU_CAPS_DEVICE_PCIE_ROOT_PORT },
+     { "qemu-xhci", QEMU_CAPS_DEVICE_QEMU_XHCI },
+     { "spapr-pci-host-bridge", QEMU_CAPS_DEVICE_SPAPR_PCI_HOST_BRIDGE },
++    { "spapr-vty", QEMU_CAPS_DEVICE_SPAPR_VTY },
+ };
+ 
+ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index 60818daa1c..65b969a0ea 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -431,7 +431,7 @@ typedef enum {
+     QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES, /* virtio-blk-*.num-queues */
+     QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT, /* -machine pseries,resize-hpt */
+ 
+-
++    QEMU_CAPS_DEVICE_SPAPR_VTY, /* -device spapr-vty */
+ 
+     /* 275 */
+ 
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index fc7f54e81e..65b6a59d3f 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -10308,6 +10308,12 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+     if (qemuDomainIsPSeries(def)) {
+         if (serial->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
+             serial->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO) {
++            if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_SPAPR_VTY)) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("spapr-vty not supported in this QEMU binary"));
++                goto error;
++            }
++
+             virBufferAsprintf(&cmd, "spapr-vty,chardev=char%s",
+                               serial->info.alias);
+         }
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+index c01777a5a3..c95025b41f 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+@@ -178,6 +178,7 @@
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='machine.pseries.resize-hpt'/>
++  <flag name='spapr-vty'/>
+   <flag name='disk-share-rw'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+index f1c9fc98a4..5ff8598fc8 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+@@ -167,6 +167,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='spapr-vty'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+index e912211f40..3b70b1a407 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+@@ -173,6 +173,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='spapr-vty'/>
+   <flag name='disk-share-rw'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 4e981c9fab..70c72e4e64 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1756,50 +1756,62 @@ mymain(void)
+     DO_TEST_PARSE_ERROR("seclabel-device-duplicates", NONE);
+ 
+     DO_TEST("pseries-basic",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-vio",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-usb-default",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_PIIX3_USB_UHCI,
+             QEMU_CAPS_PCI_OHCI,
+             QEMU_CAPS_PCI_MULTIFUNCTION);
+     DO_TEST("pseries-usb-multi",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_PIIX3_USB_UHCI,
+             QEMU_CAPS_PCI_OHCI,
+             QEMU_CAPS_PCI_MULTIFUNCTION);
+     DO_TEST("pseries-vio-user-assigned",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST_PARSE_ERROR("pseries-vio-address-clash",
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-nvram", QEMU_CAPS_DEVICE_NVRAM);
+     DO_TEST("pseries-usb-kbd", QEMU_CAPS_PCI_OHCI,
+             QEMU_CAPS_DEVICE_USB_KBD,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-cpu-exact",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST_PARSE_ERROR("pseries-no-parallel",
+             QEMU_CAPS_NODEFCONFIG);
+ 
+     qemuTestSetHostArch(driver.caps, VIR_ARCH_PPC64);
+     DO_TEST("pseries-cpu-compat", QEMU_CAPS_KVM,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-cpu-le", QEMU_CAPS_KVM,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST_FAILURE("pseries-cpu-compat-power9", QEMU_CAPS_KVM);
+ 
+     qemuTestSetHostCPU(driver.caps, cpuPower9);
+     DO_TEST("pseries-cpu-compat-power9",
+             QEMU_CAPS_KVM,
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     qemuTestSetHostCPU(driver.caps, NULL);
+ 
+     qemuTestSetHostArch(driver.caps, VIR_ARCH_NONE);
+ 
+     DO_TEST("pseries-panic-missing",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pseries-panic-no-address",
++            QEMU_CAPS_DEVICE_SPAPR_VTY,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST_FAILURE("pseries-panic-address",
+                     QEMU_CAPS_NODEFCONFIG);
+-- 
+2.15.1
+

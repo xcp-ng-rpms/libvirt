@@ -1,0 +1,120 @@
+From 72285626fa7b899ceb9c8d4358b4b1b3fa7081a4 Mon Sep 17 00:00:00 2001
+Message-Id: <72285626fa7b899ceb9c8d4358b4b1b3fa7081a4@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:32 +0100
+Subject: [PATCH] qemu: Add support for resctrl
+
+We've been building up to this.  This adds support for cputune/cachetune
+settings for domains in the QEMU driver.  The addition into
+qemuProcessSetupVcpu() automatically adds support for hotplug.  For hot-unplug
+we need to remove the allocation only if all the vCPUs were unplugged.  But
+since the threads are left running, we can't really do much about it now.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 9a2fc2db8fe18da41c274d52b6e52316a4bbe52d)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_process.c | 60 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 55 insertions(+), 5 deletions(-)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index c64088e4ca..57faf9cd79 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -2504,6 +2504,32 @@ qemuProcessSetupEmulator(virDomainObjPtr vm)
+ }
+ 
+ 
++static int
++qemuProcessResctrlCreate(virQEMUDriverPtr driver,
++                         virDomainObjPtr vm)
++{
++    int ret = -1;
++    size_t i = 0;
++    virCapsPtr caps = virQEMUDriverGetCapabilities(driver, false);
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++
++    if (!caps)
++        return -1;
++
++    for (i = 0; i < vm->def->ncachetunes; i++) {
++        if (virResctrlAllocCreate(caps->host.resctrl,
++                                  vm->def->cachetunes[i]->alloc,
++                                  priv->machineName) < 0)
++            goto cleanup;
++    }
++
++    ret = 0;
++ cleanup:
++    virObjectUnref(caps);
++    return ret;
++}
++
++
+ static int
+ qemuProcessInitPasswords(virConnectPtr conn,
+                          virQEMUDriverPtr driver,
+@@ -5015,12 +5041,26 @@ qemuProcessSetupVcpu(virDomainObjPtr vm,
+ {
+     pid_t vcpupid = qemuDomainGetVcpuPid(vm, vcpuid);
+     virDomainVcpuDefPtr vcpu = virDomainDefGetVcpu(vm->def, vcpuid);
++    size_t i = 0;
+ 
+-    return qemuProcessSetupPid(vm, vcpupid, VIR_CGROUP_THREAD_VCPU,
+-                               vcpuid, vcpu->cpumask,
+-                               vm->def->cputune.period,
+-                               vm->def->cputune.quota,
+-                               &vcpu->sched);
++    if (qemuProcessSetupPid(vm, vcpupid, VIR_CGROUP_THREAD_VCPU,
++                            vcpuid, vcpu->cpumask,
++                            vm->def->cputune.period,
++                            vm->def->cputune.quota,
++                            &vcpu->sched) < 0)
++        return -1;
++
++    for (i = 0; i < vm->def->ncachetunes; i++) {
++        virDomainCachetuneDefPtr ct = vm->def->cachetunes[i];
++
++        if (virBitmapIsBitSet(ct->vcpus, vcpuid)) {
++            if (virResctrlAllocAddPID(ct->alloc, vcpupid) < 0)
++                return -1;
++            break;
++        }
++    }
++
++    return 0;
+ }
+ 
+ 
+@@ -5892,6 +5932,10 @@ qemuProcessLaunch(virConnectPtr conn,
+     if (qemuProcessSetupEmulator(vm) < 0)
+         goto cleanup;
+ 
++    VIR_DEBUG("Setting up resctrlfs");
++    if (qemuProcessResctrlCreate(driver, vm) < 0)
++        goto cleanup;
++
+     VIR_DEBUG("Setting domain security labels");
+     if (qemuSecuritySetAllLabel(driver,
+                                 vm,
+@@ -6540,6 +6584,12 @@ void qemuProcessStop(virQEMUDriverPtr driver,
+                  vm->def->name);
+     }
+ 
++    /* Remove resctrl allocation after cgroups are cleaned up which makes it
++     * kind of safer (although removing the allocation should work even with
++     * pids in tasks file */
++    for (i = 0; i < vm->def->ncachetunes; i++)
++        virResctrlAllocRemove(vm->def->cachetunes[i]->alloc);
++
+     qemuProcessRemoveDomainStatus(driver, vm);
+ 
+     /* Remove VNC and Spice ports from port reservation bitmap, but only if
+-- 
+2.16.1
+

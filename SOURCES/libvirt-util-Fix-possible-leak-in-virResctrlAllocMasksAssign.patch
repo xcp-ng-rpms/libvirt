@@ -1,0 +1,38 @@
+From 7d3283c2747833de50eab930209c16896885761a Mon Sep 17 00:00:00 2001
+Message-Id: <7d3283c2747833de50eab930209c16896885761a@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Fri, 2 Feb 2018 15:21:26 +0100
+Subject: [PATCH] util: Fix possible leak in virResctrlAllocMasksAssign
+
+Found by coverity.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 679543449c0488f3b6f4c5671eee70a86cfa03ec)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1540817
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index e1c4998f71..70426199ce 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -1444,10 +1444,10 @@ virResctrlAllocMasksAssign(virResctrlInfoPtr resctrl,
+ 
+     alloc_default = virResctrlAllocGetDefault(resctrl);
+     if (!alloc_default)
+-        return -1;
++        goto cleanup;
+ 
+     if (virResctrlAllocCopyMasks(alloc, alloc_default) < 0)
+-        return -1;
++        goto cleanup;
+ 
+     for (level = 0; level < alloc->nlevels; level++) {
+         virResctrlAllocPerLevelPtr a_level = alloc->levels[level];
+-- 
+2.16.1
+

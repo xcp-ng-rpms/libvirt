@@ -1,0 +1,61 @@
+From e1925c70ae31799e0c829ffee5afe88546cd000d Mon Sep 17 00:00:00 2001
+Message-Id: <e1925c70ae31799e0c829ffee5afe88546cd000d@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Wed, 22 Nov 2017 10:28:35 +0100
+Subject: [PATCH] vierror: Define VIR_ERROR_MAX_LENGTH macro
+
+And use it instead of a magic 1024 constant.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit c88ce8ae740165ffcf3cb172c6950ffe0c3a7b3b)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1335534
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+---
+ src/util/virerror.c | 6 +++---
+ src/util/virerror.h | 2 ++
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/util/virerror.c b/src/util/virerror.c
+index 1f15c5dbbe..91022c3b63 100644
+--- a/src/util/virerror.c
++++ b/src/util/virerror.c
+@@ -1480,7 +1480,7 @@ void virReportErrorHelper(int domcode,
+ {
+     int save_errno = errno;
+     va_list args;
+-    char errorMessage[1024];
++    char errorMessage[VIR_ERROR_MAX_LENGTH];
+     const char *virerr;
+ 
+     if (fmt) {
+@@ -1541,8 +1541,8 @@ void virReportSystemErrorFull(int domcode,
+                               const char *fmt, ...)
+ {
+     int save_errno = errno;
+-    char strerror_buf[1024];
+-    char msgDetailBuf[1024];
++    char strerror_buf[VIR_ERROR_MAX_LENGTH];
++    char msgDetailBuf[VIR_ERROR_MAX_LENGTH];
+ 
+     const char *errnoDetail = virStrerror(theerrno, strerror_buf,
+                                           sizeof(strerror_buf));
+diff --git a/src/util/virerror.h b/src/util/virerror.h
+index 3201d5cec6..77f6340dc8 100644
+--- a/src/util/virerror.h
++++ b/src/util/virerror.h
+@@ -24,6 +24,8 @@
+ 
+ # include "internal.h"
+ 
++# define VIR_ERROR_MAX_LENGTH 1024
++
+ extern virErrorFunc virErrorHandler;
+ extern void *virUserData;
+ 
+-- 
+2.15.0
+

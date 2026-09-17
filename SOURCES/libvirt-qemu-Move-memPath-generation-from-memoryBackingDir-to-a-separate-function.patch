@@ -1,0 +1,78 @@
+From f6772178504ef0c3f02a3d18208bf7ab88402f81 Mon Sep 17 00:00:00 2001
+Message-Id: <f6772178504ef0c3f02a3d18208bf7ab88402f81@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Thu, 9 Nov 2017 16:06:43 +0100
+Subject: [PATCH] qemu: Move memPath generation from memoryBackingDir to a
+ separate function
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1461214
+
+In near future we will need more than just a plain VIR_STRDUP().
+Better implement that in a separate function and in
+qemuBuildMemoryBackendStr() which is complicated enough already.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit ae1b5d47e5f032a9a11688105e70198a0a160a50)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c |  2 +-
+ src/qemu/qemu_conf.c    | 18 ++++++++++++++++++
+ src/qemu/qemu_conf.h    |  3 +++
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 365555ca87..9f346c3649 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -3439,7 +3439,7 @@ qemuBuildMemoryBackendStr(virJSONValuePtr *backendProps,
+         } else {
+             /* We can have both pagesize and mem source. If that's the case,
+              * prefer hugepages as those are more specific. */
+-            if (VIR_STRDUP(memPath, cfg->memoryBackingDir) < 0)
++            if (qemuGetMemoryBackingPath(cfg, &memPath) < 0)
+                 goto cleanup;
+         }
+ 
+diff --git a/src/qemu/qemu_conf.c b/src/qemu/qemu_conf.c
+index 66f9761eea..3b670a68c5 100644
+--- a/src/qemu/qemu_conf.c
++++ b/src/qemu/qemu_conf.c
+@@ -1765,3 +1765,21 @@ qemuGetDomainHupageMemPath(const virDomainDef *def,
+ 
+     return 0;
+ }
++
++
++/**
++ * qemuGetMemoryBackingPath:
++ * @cfg: the driver config
++ * @memPath: constructed path
++ *
++ * Constructs path to memory backing dir and stores it at @memPath.
++ *
++ * Returns: 0 on success,
++ *          -1 otherwise (with error reported).
++ */
++int
++qemuGetMemoryBackingPath(virQEMUDriverConfigPtr cfg,
++                         char **memPath)
++{
++    return VIR_STRDUP(*memPath, cfg->memoryBackingDir);
++}
+diff --git a/src/qemu/qemu_conf.h b/src/qemu/qemu_conf.h
+index 13b6f818a2..9d6866816f 100644
+--- a/src/qemu/qemu_conf.h
++++ b/src/qemu/qemu_conf.h
+@@ -363,4 +363,7 @@ int qemuGetDomainHupageMemPath(const virDomainDef *def,
+                                virQEMUDriverConfigPtr cfg,
+                                unsigned long long pagesize,
+                                char **memPath);
++
++int qemuGetMemoryBackingPath(virQEMUDriverConfigPtr cfg,
++                             char **memPath);
+ #endif /* __QEMUD_CONF_H */
+-- 
+2.15.0
+

@@ -1,0 +1,43 @@
+From 9c5bfad7725766860abf41d47a55f6fbdd9130bb Mon Sep 17 00:00:00 2001
+Message-Id: <9c5bfad7725766860abf41d47a55f6fbdd9130bb@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Wed, 14 Mar 2018 08:18:43 +0100
+Subject: [PATCH] virDomainDeviceValidateAliasForHotplug: Use correct domain
+ defintion
+
+RHEL-7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1543775
+RHEL-7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1554928
+
+For some weird reason this function is getting live and
+persistent def for domain but then accesses vm->def and
+vm->newDef directly. This is rather unsafe as we can be
+accessing NULL pointer.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit e5673ed44465edcfccdd906158136ad8dcb94b9b)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+---
+ src/conf/domain_conf.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 1a3db4a7be..c746ab19cd 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -5666,11 +5666,11 @@ virDomainDeviceValidateAliasForHotplug(virDomainObjPtr vm,
+         return -1;
+ 
+     if (persDef &&
+-        virDomainDeviceValidateAliasImpl(vm->def, dev) < 0)
++        virDomainDeviceValidateAliasImpl(persDef, dev) < 0)
+         return -1;
+ 
+     if (liveDef &&
+-        virDomainDeviceValidateAliasImpl(vm->newDef, dev) < 0)
++        virDomainDeviceValidateAliasImpl(liveDef, dev) < 0)
+         return -1;
+ 
+     return 0;
+-- 
+2.16.2
+

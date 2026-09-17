@@ -1,0 +1,168 @@
+From 75d7a0195b91b16116e5ad37d2cdd2374c80ef1b Mon Sep 17 00:00:00 2001
+Message-Id: <75d7a0195b91b16116e5ad37d2cdd2374c80ef1b@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:14 +0100
+Subject: [PATCH] util: Introduce virBitmapNewString
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Our bitmaps can be represented as data (raw bytes for which we have
+virBitmapNewData() and virBitmapToData()), human representation (list
+of numbers in a string for which we have virBitmapParse() and
+virBitmapFormat()) and hexadecimal string (for which we have only
+virBitmapToString()).  So let's add the missing complement for the
+last one so that we can parse hexadecimal strings.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 2e5579a43b45e55d744cac9f62aaa901e2587fee)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virbitmap.c     | 38 ++++++++++++++++++++++++++++++++++++++
+ src/util/virbitmap.h     |  4 ++++
+ tests/virbitmaptest.c    | 38 ++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 81 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index f1c6786ecf..1d895a3bf6 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1372,6 +1372,7 @@ virBitmapNewCopy;
+ virBitmapNewData;
+ virBitmapNewEmpty;
+ virBitmapNewQuiet;
++virBitmapNewString;
+ virBitmapNextClearBit;
+ virBitmapNextSetBit;
+ virBitmapOverlaps;
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index b1c1236fd3..47d16ee222 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -36,6 +36,7 @@
+ #include "c-ctype.h"
+ #include "count-one-bits.h"
+ #include "virstring.h"
++#include "virutil.h"
+ #include "virerror.h"
+ 
+ #define VIR_FROM_THIS VIR_FROM_NONE
+@@ -1071,6 +1072,43 @@ virBitmapCountBits(virBitmapPtr bitmap)
+     return ret;
+ }
+ 
++
++/**
++ * virBitmapNewString:
++ * @string: the string to be converted to a bitmap
++ *
++ * Allocate a bitmap from a string of hexadecimal data.
++ *
++ * Returns a pointer to the allocated bitmap or NULL if
++ * memory cannot be allocated.
++ */
++virBitmapPtr
++virBitmapNewString(const char *string)
++{
++    virBitmapPtr bitmap;
++    size_t i = 0;
++    size_t len = strlen(string);
++
++    if (strspn(string, "0123456789abcdefABCDEF") != len) {
++        virReportError(VIR_ERR_INVALID_ARG,
++                       _("Invalid hexadecimal string '%s'"), string);
++        return NULL;
++    }
++
++    bitmap = virBitmapNew(len * 4);
++    if (!bitmap)
++        return NULL;
++
++    for (i = 0; i < len; i++) {
++        unsigned long nibble = virHexToBin(string[len - i - 1]);
++        nibble <<= VIR_BITMAP_BIT_OFFSET(i * 4);
++        bitmap->map[VIR_BITMAP_UNIT_OFFSET(i * 4)] |= nibble;
++    }
++
++    return bitmap;
++}
++
++
+ /**
+  * virBitmapDataFormat:
+  * @data: the data
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index 02acb7519d..e964a3edc9 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -80,6 +80,10 @@ bool virBitmapIsBitSet(virBitmapPtr bitmap, size_t b)
+ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+ 
++virBitmapPtr
++virBitmapNewString(const char *string)
++    ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
++
+ char *virBitmapToString(virBitmapPtr bitmap, bool prefix, bool trim)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
+ 
+diff --git a/tests/virbitmaptest.c b/tests/virbitmaptest.c
+index 75cdddf9a7..9daa8316f3 100644
+--- a/tests/virbitmaptest.c
++++ b/tests/virbitmaptest.c
+@@ -663,6 +663,42 @@ test12(const void *opaque ATTRIBUTE_UNUSED)
+     return ret;
+ }
+ 
++
++/* virBitmap(New/To)String */
++static int
++test13(const void *opaque ATTRIBUTE_UNUSED)
++{
++    virBitmapPtr map = NULL;
++    const char *strings[] = { "1234feebee", "000c0fefe" };
++    char *str = NULL;
++    size_t i = 0;
++    int ret = -1;
++
++    for (i = 0; i < ARRAY_CARDINALITY(strings); i++) {
++        map = virBitmapNewString(strings[i]);
++        str = virBitmapToString(map, false, true);
++
++        if (!map || !str)
++            goto cleanup;
++
++        if (STRNEQ(strings[i], str)) {
++            fprintf(stderr, "\n expected bitmap string '%s' actual string "
++                    "'%s'\n", strings[i], str);
++            goto cleanup;
++        }
++
++        VIR_FREE(str);
++        virBitmapFree(map);
++        map = NULL;
++    }
++
++    ret = 0;
++ cleanup:
++    VIR_FREE(str);
++    virBitmapFree(map);
++    return ret;
++}
++
+ #undef TEST_MAP
+ 
+ 
+@@ -711,6 +747,8 @@ mymain(void)
+ 
+     if (virTestRun("test12", test12, NULL) < 0)
+         ret = -1;
++    if (virTestRun("test13", test13, NULL) < 0)
++        ret = -1;
+ 
+     return ret;
+ }
+-- 
+2.16.1
+

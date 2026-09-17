@@ -1,0 +1,186 @@
+From d3cf944874059fd81b68f8cc0beef6b8b69490bb Mon Sep 17 00:00:00 2001
+Message-Id: <d3cf944874059fd81b68f8cc0beef6b8b69490bb@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 1 Dec 2017 15:57:03 +0100
+Subject: [PATCH] qemu: domain: Fix backing store terminator for non-backing
+ local files
+
+Raw local files do not pass through the backing store detector and thus
+the code did not allocate the required backing store terminator for
+them. Previously the terminating element would be formatted into the XML
+since the default values used for the metadata allowed that. This is a
+regression since a693fdba0111ff which was not detected in the review.
+
+This patch also reverts all the changes in the test files.
+
+(cherry picked from commit adcc31bb89e47ef642cbcfcff372131db7cd8d8b)
+
+ Conflicts:
+	src/qemu/qemu_domain.c - as with previous patch the return code
+        logic hat do be negated
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509110
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c                                             | 7 +++++++
+ .../qemuhotplug-base-ccw-live+ccw-virtio.xml                       | 1 +
+ ...otplug-base-ccw-live-with-2-ccw-virtio+ccw-virtio-1-reverse.xml | 2 ++
+ .../qemuhotplug-base-ccw-live-with-2-ccw-virtio.xml                | 1 +
+ ...hotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2-explicit.xml | 1 +
+ .../qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2.xml     | 1 +
+ ...qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml | 1 +
+ tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi.xml   | 1 +
+ tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-usb.xml    | 1 +
+ tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-virtio.xml | 1 +
+ .../qemuhotplug-base-without-scsi-controller-live+disk-scsi-2.xml  | 1 +
+ 11 files changed, 18 insertions(+)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 33cb3df949..9dd9db049b 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -6372,6 +6372,13 @@ qemuDomainDetermineDiskChain(virQEMUDriverPtr driver,
+             goto cleanup;
+         }
+ 
++        /* terminate the chain for such images as the code below would do */
++        if (!disk->src->backingStore &&
++            VIR_ALLOC(disk->src->backingStore) < 0) {
++            ret = -1;
++            goto cleanup;
++        }
++
+         goto cleanup;
+     }
+ 
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live+ccw-virtio.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live+ccw-virtio.xml
+index 0fa8d036b9..cd03d0e09b 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live+ccw-virtio.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live+ccw-virtio.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='vde' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio+ccw-virtio-1-reverse.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio+ccw-virtio-1-reverse.xml
+index 135427fff5..7be75f977b 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio+ccw-virtio-1-reverse.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio+ccw-virtio-1-reverse.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='hda' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+@@ -31,6 +32,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='hdb' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio.xml
+index e17c4e43b2..a83f1b5d73 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-2-ccw-virtio.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='hda' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2-explicit.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2-explicit.xml
+index 326d312fa9..3e90207519 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2-explicit.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2-explicit.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='hda' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2.xml
+index 326d312fa9..3e90207519 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-ccw-live-with-ccw-virtio+ccw-virtio-2.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='hda' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
+index 16caeb3542..4c3ea3202b 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
+@@ -33,6 +33,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='sdg' bus='scsi'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi.xml
+index a6dbf0b1bd..493a615fd3 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='sdf' bus='scsi'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-usb.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-usb.xml
+index 6ccb88f140..3609819ea3 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-usb.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-usb.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='sdq' bus='usb'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-virtio.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-virtio.xml
+index b97c0b41e2..b88b220e33 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-virtio.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-virtio.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='vde' bus='virtio'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-without-scsi-controller-live+disk-scsi-2.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-without-scsi-controller-live+disk-scsi-2.xml
+index 6422e1640d..c12d18f716 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-without-scsi-controller-live+disk-scsi-2.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-without-scsi-controller-live+disk-scsi-2.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='sdf' bus='scsi'/>
+       <readonly/>
+       <shareable/>
+-- 
+2.15.1
+

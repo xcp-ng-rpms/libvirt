@@ -1,0 +1,90 @@
+From eaeaf49524c3b7f26afb86bdeddba8d86bce4790 Mon Sep 17 00:00:00 2001
+Message-Id: <eaeaf49524c3b7f26afb86bdeddba8d86bce4790@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:39 +0100
+Subject: [PATCH] util: Don't check if entries under /sys/fs/resctrl/(info/)
+ are directories
+
+We are skipping non-directories under /sys/fs/resctrl/(info/) since those are not
+interesting for us.  However in tests it can sometimes happen that ent->d_type
+is 0 instead of 4 (DT_DIR) for directories.
+
+I've seen it fail on two machines.  Different machines, different systems, I
+cannot reproduce it even using the same setup.  So one of the ways how to work
+around this is call stat() on it.  The other one is not checking if it is a
+directory since we'll find out eventually when we want to read some files
+underneath it.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit f2e16994f7d660a54daba1059441dc0dcf4d9cbd)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 27 +++++++++++++++------------
+ 1 file changed, 15 insertions(+), 12 deletions(-)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 684cb22fd8..42876c6e2b 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -410,10 +410,6 @@ virResctrlGetInfo(virResctrlInfoPtr resctrl)
+ 
+     while ((rv = virDirRead(dirp, &ent, SYSFS_RESCTRL_PATH "/info")) > 0) {
+         VIR_DEBUG("Parsing info type '%s'", ent->d_name);
+-
+-        if (ent->d_type != DT_DIR)
+-            continue;
+-
+         if (ent->d_name[0] != 'L')
+             continue;
+ 
+@@ -436,19 +432,29 @@ virResctrlGetInfo(virResctrlInfoPtr resctrl)
+         rv = virFileReadValueUint(&i_type->control.max_allocation,
+                                   SYSFS_RESCTRL_PATH "/info/%s/num_closids",
+                                   ent->d_name);
+-        if (rv == -2)
+-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                           _("Cannot get num_closids from resctrl cache info"));
+-        if (rv < 0)
++        if (rv == -2) {
++            /* The file doesn't exist, so it's unusable for us,
++             *  but we can scan further */
++            VIR_WARN("The path '" SYSFS_RESCTRL_PATH "/info/%s/num_closids' "
++                     "does not exist",
++                     ent->d_name);
++        } else if (rv < 0) {
++            /* Other failures are fatal, so just quit */
+             goto cleanup;
++        }
+ 
+         rv = virFileReadValueString(&i_type->cbm_mask,
+                                     SYSFS_RESCTRL_PATH
+                                     "/info/%s/cbm_mask",
+                                     ent->d_name);
+-        if (rv == -2)
++        if (rv == -2) {
++            /* If the previous file exists, so should this one.  Hence -2 is
++             * fatal in this case as well (errors out in next condition) - the
++             * kernel interface might've changed too much or something else is
++             * wrong. */
+             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                            _("Cannot get cbm_mask from resctrl cache info"));
++        }
+         if (rv < 0)
+             goto cleanup;
+ 
+@@ -1169,9 +1175,6 @@ virResctrlAllocGetUnused(virResctrlInfoPtr resctrl)
+         goto error;
+ 
+     while ((rv = virDirRead(dirp, &ent, SYSFS_RESCTRL_PATH)) > 0) {
+-        if (ent->d_type != DT_DIR)
+-            continue;
+-
+         if (STREQ(ent->d_name, "info"))
+             continue;
+ 
+-- 
+2.16.1
+

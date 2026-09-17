@@ -1,0 +1,110 @@
+From a845df6a28ecc3479ad40e49d711e0c86cd27f85 Mon Sep 17 00:00:00 2001
+Message-Id: <a845df6a28ecc3479ad40e49d711e0c86cd27f85@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Thu, 30 Nov 2017 17:45:59 +0100
+Subject: [PATCH] virQEMUCapsHasPCIMultiBus: use def->os.arch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+We do not fill out qemuCaps->arch when parsing status XML.
+
+Use def->os.arch like we do for PPC.
+
+This fixes hotplug after daemon restart for domains that use
+a user alias for the implicit pci-root on x86.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1518148
+(cherry picked from commit fdf354fb51e7f00b582d0daa18961d432155df83)
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                                        | 2 +-
+ tests/qemuhotplugtestcpus/ppc64-modern-bulk-result-live.xml         | 2 +-
+ tests/qemuhotplugtestcpus/ppc64-modern-individual-result-live.xml   | 2 +-
+ tests/qemuhotplugtestcpus/x86-modern-bulk-result-live.xml           | 2 +-
+ tests/qemuhotplugtestcpus/x86-modern-individual-add-result-live.xml | 2 +-
+ tests/qemuhotplugtestcpus/x86-old-bulk-result-live.xml              | 2 +-
+ 6 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index d1677144b7..81f7e4e440 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -2415,7 +2415,7 @@ bool virQEMUCapsHasPCIMultiBus(virQEMUCapsPtr qemuCaps,
+ {
+     /* x86_64 and i686 support PCI-multibus on all machine types
+      * since forever */
+-    if (ARCH_IS_X86(qemuCaps->arch))
++    if (ARCH_IS_X86(def->os.arch))
+         return true;
+ 
+     if (def->os.arch == VIR_ARCH_PPC ||
+diff --git a/tests/qemuhotplugtestcpus/ppc64-modern-bulk-result-live.xml b/tests/qemuhotplugtestcpus/ppc64-modern-bulk-result-live.xml
+index 662ed67390..43e6267250 100644
+--- a/tests/qemuhotplugtestcpus/ppc64-modern-bulk-result-live.xml
++++ b/tests/qemuhotplugtestcpus/ppc64-modern-bulk-result-live.xml
+@@ -56,7 +56,7 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+     <controller type='pci' index='0' model='pci-root'>
+-      <alias name='pci'/>
++      <alias name='pci.0'/>
+     </controller>
+     <input type='mouse' bus='ps2'>
+       <alias name='input0'/>
+diff --git a/tests/qemuhotplugtestcpus/ppc64-modern-individual-result-live.xml b/tests/qemuhotplugtestcpus/ppc64-modern-individual-result-live.xml
+index 866a81a2d7..0a8d372149 100644
+--- a/tests/qemuhotplugtestcpus/ppc64-modern-individual-result-live.xml
++++ b/tests/qemuhotplugtestcpus/ppc64-modern-individual-result-live.xml
+@@ -56,7 +56,7 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+     <controller type='pci' index='0' model='pci-root'>
+-      <alias name='pci'/>
++      <alias name='pci.0'/>
+     </controller>
+     <input type='mouse' bus='ps2'>
+       <alias name='input0'/>
+diff --git a/tests/qemuhotplugtestcpus/x86-modern-bulk-result-live.xml b/tests/qemuhotplugtestcpus/x86-modern-bulk-result-live.xml
+index a025033e84..fe9a81a091 100644
+--- a/tests/qemuhotplugtestcpus/x86-modern-bulk-result-live.xml
++++ b/tests/qemuhotplugtestcpus/x86-modern-bulk-result-live.xml
+@@ -32,7 +32,7 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+     <controller type='pci' index='0' model='pci-root'>
+-      <alias name='pci'/>
++      <alias name='pci.0'/>
+     </controller>
+     <input type='mouse' bus='ps2'>
+       <alias name='input0'/>
+diff --git a/tests/qemuhotplugtestcpus/x86-modern-individual-add-result-live.xml b/tests/qemuhotplugtestcpus/x86-modern-individual-add-result-live.xml
+index 8adcb71041..12b28be5fe 100644
+--- a/tests/qemuhotplugtestcpus/x86-modern-individual-add-result-live.xml
++++ b/tests/qemuhotplugtestcpus/x86-modern-individual-add-result-live.xml
+@@ -32,7 +32,7 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+     <controller type='pci' index='0' model='pci-root'>
+-      <alias name='pci'/>
++      <alias name='pci.0'/>
+     </controller>
+     <input type='mouse' bus='ps2'>
+       <alias name='input0'/>
+diff --git a/tests/qemuhotplugtestcpus/x86-old-bulk-result-live.xml b/tests/qemuhotplugtestcpus/x86-old-bulk-result-live.xml
+index b52f049fb0..6f50bb5c12 100644
+--- a/tests/qemuhotplugtestcpus/x86-old-bulk-result-live.xml
++++ b/tests/qemuhotplugtestcpus/x86-old-bulk-result-live.xml
+@@ -22,7 +22,7 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+     <controller type='pci' index='0' model='pci-root'>
+-      <alias name='pci'/>
++      <alias name='pci.0'/>
+     </controller>
+     <input type='mouse' bus='ps2'>
+       <alias name='input0'/>
+-- 
+2.15.1
+

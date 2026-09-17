@@ -1,0 +1,113 @@
+From c043762bfe04d7b10030b76fae12473b031c3c0a Mon Sep 17 00:00:00 2001
+Message-Id: <c043762bfe04d7b10030b76fae12473b031c3c0a@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 2 Feb 2018 11:05:00 +0100
+Subject: [PATCH] qemu: migration: Refresh device information after
+ transferring state
+
+In my first approach in 4b480d10768c I overlooked the comment in
+qemuMigrationRunIncoming stating that during actual migration the
+qemuMigrationRunIncoming does not wait until the migration is complete
+but rather offloads that to the Finish phase of migration.
+
+This means that during actual migration qemuProcessRefreshState was
+called prior to qemu actually transferring the full state and thus the
+queries did not get the correct information. The approach worked only
+for restore, where we wait for the migration to finish during qemu
+startup.
+
+Fix the issue by calling qemuProcessRefreshState both from
+qemuProcessStart if there's no incomming migration and from
+qemuMigrationFinish so that the code actually works as expected.
+
+(cherry picked from commit 93db7eea1b86408e02852a8c886d473f4f5007e3)
+
+ https://bugzilla.redhat.com/show_bug.cgi?id=1463168
+---
+ src/qemu/qemu_migration.c |  9 +++++++++
+ src/qemu/qemu_process.c   | 17 ++++++++++-------
+ src/qemu/qemu_process.h   |  4 ++++
+ 3 files changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/src/qemu/qemu_migration.c b/src/qemu/qemu_migration.c
+index a50bb7206c..0968dd62a4 100644
+--- a/src/qemu/qemu_migration.c
++++ b/src/qemu/qemu_migration.c
+@@ -5351,6 +5351,15 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
+             goto endjob;
+     }
+ 
++    /* Now that the state data was transferred we can refresh the actual state
++     * of the devices */
++    if (qemuProcessRefreshState(driver, vm, QEMU_ASYNC_JOB_MIGRATION_IN) < 0) {
++        /* Similarly to the case above v2 protocol will not be able to recover
++         * from this. Let's ignore this and perhaps stuff will not break. */
++        if (v3proto)
++            goto endjob;
++    }
++
+     if (priv->job.current->status == QEMU_DOMAIN_JOB_STATUS_POSTCOPY)
+         inPostCopy = true;
+ 
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 3bb4b14948..caf967dac5 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -6080,7 +6080,7 @@ qemuProcessLaunch(virConnectPtr conn,
+  * function is called after a deferred migration finishes so that we can update
+  * state influenced by the migration stream.
+  */
+-static int
++int
+ qemuProcessRefreshState(virQEMUDriverPtr driver,
+                         virDomainObjPtr vm,
+                         qemuDomainAsyncJob asyncJob)
+@@ -6121,9 +6121,6 @@ qemuProcessFinishStartup(virConnectPtr conn,
+     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
+     int ret = -1;
+ 
+-    if (qemuProcessRefreshState(driver, vm, asyncJob) < 0)
+-        goto cleanup;
+-
+     if (startCPUs) {
+         VIR_DEBUG("Starting domain CPUs");
+         if (qemuProcessStartCPUs(driver, vm, conn,
+@@ -6227,11 +6224,17 @@ qemuProcessStart(virConnectPtr conn,
+                                  VIR_DOMAIN_PAUSED_USER) < 0)
+         goto stop;
+ 
+-    /* Keep watching qemu log for errors during incoming migration, otherwise
+-     * unset reporting errors from qemu log. */
+-    if (!incoming)
++    if (!incoming) {
++        /* Keep watching qemu log for errors during incoming migration, otherwise
++         * unset reporting errors from qemu log. */
+         qemuMonitorSetDomainLog(priv->mon, NULL, NULL, NULL);
+ 
++        /* Refresh state of devices from qemu. During migration this needs to
++         * happen after the state information is fully transferred. */
++        if (qemuProcessRefreshState(driver, vm, asyncJob) < 0)
++            goto stop;
++    }
++
+     ret = 0;
+ 
+  cleanup:
+diff --git a/src/qemu/qemu_process.h b/src/qemu/qemu_process.h
+index cd9a720313..b383ff309b 100644
+--- a/src/qemu/qemu_process.h
++++ b/src/qemu/qemu_process.h
+@@ -129,6 +129,10 @@ int qemuProcessFinishStartup(virConnectPtr conn,
+                              bool startCPUs,
+                              virDomainPausedReason pausedReason);
+ 
++int qemuProcessRefreshState(virQEMUDriverPtr driver,
++                            virDomainObjPtr vm,
++                            qemuDomainAsyncJob asyncJob);
++
+ typedef enum {
+     VIR_QEMU_PROCESS_STOP_MIGRATED      = 1 << 0,
+     VIR_QEMU_PROCESS_STOP_NO_RELABEL    = 1 << 1,
+-- 
+2.16.1
+

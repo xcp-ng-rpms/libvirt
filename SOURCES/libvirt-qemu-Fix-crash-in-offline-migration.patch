@@ -1,0 +1,42 @@
+From e41b2f83ca98fe352e9901d99b5cb9bf62d79845 Mon Sep 17 00:00:00 2001
+Message-Id: <e41b2f83ca98fe352e9901d99b5cb9bf62d79845@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Fri, 19 Jan 2018 14:33:16 +0100
+Subject: [PATCH] qemu: Fix crash in offline migration
+
+When migrating a shutoff domain (i.e., offline migration), we have no
+statistics to report and thus jobInfo will be NULL in
+qemuMigrationFinish.
+
+Broken by me in v3.10.0-183-ge8784e7868.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1536351
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit bcc5710708ec90146b71bdb00d8705cb4a9e0088)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_migration.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_migration.c b/src/qemu/qemu_migration.c
+index b814cc6608..a50bb7206c 100644
+--- a/src/qemu/qemu_migration.c
++++ b/src/qemu/qemu_migration.c
+@@ -5459,8 +5459,10 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
+     }
+ 
+     if (dom) {
+-        VIR_STEAL_PTR(priv->job.completed, jobInfo);
+-        priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
++        if (jobInfo) {
++            VIR_STEAL_PTR(priv->job.completed, jobInfo);
++            priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
++        }
+ 
+         if (qemuMigrationBakeCookie(mig, driver, vm, cookieout, cookieoutlen,
+                                     QEMU_MIGRATION_COOKIE_STATS) < 0)
+-- 
+2.16.1
+

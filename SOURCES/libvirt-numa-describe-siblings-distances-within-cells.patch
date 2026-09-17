@@ -1,0 +1,461 @@
+From 2ff472bc2ac9d01181c1dbd522153934de79907f Mon Sep 17 00:00:00 2001
+Message-Id: <2ff472bc2ac9d01181c1dbd522153934de79907f@dist-git>
+From: Wim ten Have <wim.ten.have@oracle.com>
+Date: Mon, 4 Dec 2017 13:38:47 +0100
+Subject: [PATCH] numa: describe siblings distances within cells
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+Add support for describing NUMA distances in a domain's <numa> <cell>
+XML description.
+
+Below is an example of a 4 node setup:
+
+  <cpu>
+    <numa>
+      <cell id='0' cpus='0-3' memory='2097152' unit='KiB'>
+        <distances>
+          <sibling id='0' value='10'/>
+          <sibling id='1' value='21'/>
+          <sibling id='2' value='31'/>
+          <sibling id='3' value='21'/>
+        </distances>
+      </cell>
+      <cell id='1' cpus='4-7' memory='2097152' unit='KiB'>
+        <distances>
+          <sibling id='0' value='21'/>
+          <sibling id='1' value='10'/>
+          <sibling id='2' value='21'/>
+          <sibling id='3' value='31'/>
+        </distances>
+      </cell>
+      <cell id='2' cpus='8-11' memory='2097152' unit='KiB'>
+        <distances>
+          <sibling id='0' value='31'/>
+          <sibling id='1' value='21'/>
+          <sibling id='2' value='10'/>
+          <sibling id='3' value='21'/>
+        </distances>
+      <cell id='3' cpus='12-15' memory='2097152' unit='KiB'>
+        <distances>
+          <sibling id='0' value='21'/>
+          <sibling id='1' value='31'/>
+          <sibling id='2' value='21'/>
+          <sibling id='3' value='10'/>
+        </distances>
+      </cell>
+    </numa>
+  </cpu>
+
+A <cell> defines a NUMA node. <distances> describes the NUMA distance
+from the <cell> to the other NUMA nodes (the <sibling>s).  For example,
+in above XML description, the distance between NUMA node0 <cell id='0'
+...> and NUMA node2 <sibling id='2' ...> is 31.
+
+Valid distance values are '10 <= value <= 255'.  A distance value of 10
+represents the distance to the node itself.  A distance value of 20
+represents the default value for remote nodes but other values are
+possible depending on the physical topology of the system.
+
+When distances are not fully described, any missing sibling distance
+values will default to 10 for local nodes and 20 for remote nodes.
+
+If distance is given for A -> B, then we default B -> A to the same
+value instead of 20.
+
+Signed-off-by: Wim ten Have <wim.ten.have@oracle.com>
+Reviewed-by: Daniel P. Berrange <berrange@redhat.com>
+Signed-off-by: Jim Fehlig <jfehlig@suse.com>
+(cherry picked from commit 74119a03f184b79dcad28aa1e6f4ede6dc444998)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in   |  64 ++++++++++++++-
+ docs/schemas/basictypes.rng |   7 ++
+ docs/schemas/cputypes.rng   |  18 +++++
+ src/conf/numa_conf.c        | 191 +++++++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 276 insertions(+), 4 deletions(-)
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index 62dd6e1ec4..a5adf5d9aa 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -1529,7 +1529,69 @@
+     </p>
+ 
+     <p>
+-      This guest NUMA specification is currently available only for QEMU/KVM.
++      This guest NUMA specification is currently available only for
++      QEMU/KVM and Xen.
++    </p>
++
++    <p>
++      A NUMA hardware architecture supports the notion of distances
++      between NUMA cells. <span class="since">Since 3.10.0</span> it
++      is possible to define the distance between NUMA cells using the
++      <code>distances</code> element within a NUMA <code>cell</code>
++      description. The <code>sibling</code> sub-element is used to
++      specify the distance value between sibling NUMA cells. For more
++      details, see the chapter explaining the system's SLIT (System
++      Locality Information Table) within the ACPI (Advanced
++      Configuration and Power Interface) specification.
++    </p>
++
++<pre>
++...
++&lt;cpu&gt;
++  ...
++  &lt;numa&gt;
++    &lt;cell id='0' cpus='0,4-7' memory='512000' unit='KiB'&gt;
++      &lt;distances&gt;
++        &lt;sibling id='0' value='10'/&gt;
++        &lt;sibling id='1' value='21'/&gt;
++        &lt;sibling id='2' value='31'/&gt;
++        &lt;sibling id='3' value='41'/&gt;
++      &lt;/distances&gt;
++    &lt;/cell&gt;
++    &lt;cell id='1' cpus='1,8-10,12-15' memory='512000' unit='KiB' memAccess='shared'&gt;
++      &lt;distances&gt;
++        &lt;sibling id='0' value='21'/&gt;
++        &lt;sibling id='1' value='10'/&gt;
++        &lt;sibling id='2' value='21'/&gt;
++        &lt;sibling id='3' value='31'/&gt;
++      &lt;/distances&gt;
++    &lt;/cell&gt;
++    &lt;cell id='2' cpus='2,11' memory='512000' unit='KiB' memAccess='shared'&gt;
++      &lt;distances&gt;
++        &lt;sibling id='0' value='31'/&gt;
++        &lt;sibling id='1' value='21'/&gt;
++        &lt;sibling id='2' value='10'/&gt;
++        &lt;sibling id='3' value='21'/&gt;
++      &lt;/distances&gt;
++    &lt;/cell&gt;
++    &lt;cell id='3' cpus='3' memory='512000' unit='KiB'&gt;
++      &lt;distances&gt;
++        &lt;sibling id='0' value='41'/&gt;
++        &lt;sibling id='1' value='31'/&gt;
++        &lt;sibling id='2' value='21'/&gt;
++        &lt;sibling id='3' value='10'/&gt;
++      &lt;/distances&gt;
++    &lt;/cell&gt;
++  &lt;/numa&gt;
++  ...
++&lt;/cpu&gt;
++...</pre>
++
++    <p>
++      Describing distances between NUMA cells is currently only supported
++      by Xen. If no <code>distances</code> are given to describe
++      the SLIT data between different cells, it will default to a scheme
++      using 10 for local and 20 for remote distances.
+     </p>
+ 
+     <h3><a id="elementsEvents">Events configuration</a></h3>
+diff --git a/docs/schemas/basictypes.rng b/docs/schemas/basictypes.rng
+index 1ea667cdf6..1a18cd31b1 100644
+--- a/docs/schemas/basictypes.rng
++++ b/docs/schemas/basictypes.rng
+@@ -77,6 +77,13 @@
+     </choice>
+   </define>
+ 
++  <define name="numaDistanceValue">
++    <data type="unsignedInt">
++      <param name="minInclusive">10</param>
++      <param name="maxInclusive">255</param>
++    </data>
++  </define>
++
+   <define name="pciaddress">
+     <optional>
+       <attribute name="domain">
+diff --git a/docs/schemas/cputypes.rng b/docs/schemas/cputypes.rng
+index 3eef16abce..c45b6dfb28 100644
+--- a/docs/schemas/cputypes.rng
++++ b/docs/schemas/cputypes.rng
+@@ -129,6 +129,24 @@
+           </choice>
+         </attribute>
+       </optional>
++      <optional>
++        <element name="distances">
++          <oneOrMore>
++            <ref name="numaDistance"/>
++          </oneOrMore>
++        </element>
++      </optional>
++    </element>
++  </define>
++
++  <define name="numaDistance">
++    <element name="sibling">
++      <attribute name="id">
++        <ref name="unsignedInt"/>
++      </attribute>
++      <attribute name="value">
++        <ref name="numaDistanceValue"/>
++      </attribute>
+     </element>
+   </define>
+ 
+diff --git a/src/conf/numa_conf.c b/src/conf/numa_conf.c
+index b71dc012c5..5fbcc72041 100644
+--- a/src/conf/numa_conf.c
++++ b/src/conf/numa_conf.c
+@@ -29,6 +29,15 @@
+ #include "virnuma.h"
+ #include "virstring.h"
+ 
++/*
++ * Distance definitions defined Conform ACPI 2.0 SLIT.
++ * See include/linux/topology.h
++ */
++#define LOCAL_DISTANCE          10
++#define REMOTE_DISTANCE         20
++/* SLIT entry value is a one-byte unsigned integer. */
++#define UNREACHABLE            255
++
+ #define VIR_FROM_THIS VIR_FROM_DOMAIN
+ 
+ VIR_ENUM_IMPL(virDomainNumatuneMemMode,
+@@ -48,6 +57,8 @@ VIR_ENUM_IMPL(virDomainMemoryAccess, VIR_DOMAIN_MEMORY_ACCESS_LAST,
+               "shared",
+               "private")
+ 
++typedef struct _virDomainNumaDistance virDomainNumaDistance;
++typedef virDomainNumaDistance *virDomainNumaDistancePtr;
+ 
+ typedef struct _virDomainNumaNode virDomainNumaNode;
+ typedef virDomainNumaNode *virDomainNumaNodePtr;
+@@ -66,6 +77,12 @@ struct _virDomainNuma {
+         virBitmapPtr nodeset;   /* host memory nodes where this guest node resides */
+         virDomainNumatuneMemMode mode;  /* memory mode selection */
+         virDomainMemoryAccess memAccess; /* shared memory access configuration */
++
++        struct _virDomainNumaDistance {
++            unsigned int value; /* locality value for node i->j or j->i */
++            unsigned int cellid;
++        } *distances;           /* remote node distances */
++        size_t ndistances;
+     } *mem_nodes;           /* guest node configuration */
+     size_t nmem_nodes;
+ 
+@@ -686,6 +703,144 @@ virDomainNumatuneNodesetIsAvailable(virDomainNumaPtr numatune,
+ }
+ 
+ 
++static int
++virDomainNumaDefNodeDistanceParseXML(virDomainNumaPtr def,
++                                     xmlXPathContextPtr ctxt,
++                                     unsigned int cur_cell)
++{
++    int ret = -1;
++    int sibling;
++    char *tmp = NULL;
++    xmlNodePtr *nodes = NULL;
++    size_t i, ndistances = def->nmem_nodes;
++
++    if (!ndistances)
++        return 0;
++
++    /* check if NUMA distances definition is present */
++    if (!virXPathNode("./distances[1]", ctxt))
++        return 0;
++
++    if ((sibling = virXPathNodeSet("./distances[1]/sibling", ctxt, &nodes)) <= 0) {
++        virReportError(VIR_ERR_XML_ERROR, "%s",
++                       _("NUMA distances defined without siblings"));
++        goto cleanup;
++    }
++
++    for (i = 0; i < sibling; i++) {
++        virDomainNumaDistancePtr ldist, rdist;
++        unsigned int sibling_id, sibling_value;
++
++        /* siblings are in order of parsing or explicitly numbered */
++        if (!(tmp = virXMLPropString(nodes[i], "id"))) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("Missing 'id' attribute in NUMA "
++                             "distances under 'cell id %d'"),
++                           cur_cell);
++            goto cleanup;
++        }
++
++        /* The "id" needs to be applicable */
++        if (virStrToLong_uip(tmp, NULL, 10, &sibling_id) < 0) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("Invalid 'id' attribute in NUMA "
++                             "distances for sibling: '%s'"),
++                           tmp);
++            goto cleanup;
++        }
++        VIR_FREE(tmp);
++
++        /* The "id" needs to be within numa/cell range */
++        if (sibling_id >= ndistances) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("'sibling_id %d' does not refer to a "
++                             "valid cell within NUMA 'cell id %d'"),
++                           sibling_id, cur_cell);
++            goto cleanup;
++        }
++
++        /* We need a locality value. Check and correct
++         * distance to local and distance to remote node.
++         */
++        if (!(tmp = virXMLPropString(nodes[i], "value"))) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("Missing 'value' attribute in NUMA distances "
++                             "under 'cell id %d' for 'sibling id %d'"),
++                           cur_cell, sibling_id);
++            goto cleanup;
++        }
++
++        /* The "value" needs to be applicable */
++        if (virStrToLong_uip(tmp, NULL, 10, &sibling_value) < 0) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("'value %s' is invalid for "
++                             "'sibling id %d' under NUMA 'cell id %d'"),
++                           tmp, sibling_id, cur_cell);
++            goto cleanup;
++        }
++        VIR_FREE(tmp);
++
++        /* Assure LOCAL_DISTANCE <= "value" <= UNREACHABLE
++         * and correct LOCAL_DISTANCE setting if such applies.
++         */
++        if ((sibling_value < LOCAL_DISTANCE ||
++             sibling_value > UNREACHABLE) ||
++            (sibling_id == cur_cell &&
++             sibling_value != LOCAL_DISTANCE) ||
++            (sibling_id != cur_cell &&
++             sibling_value == LOCAL_DISTANCE)) {
++            virReportError(VIR_ERR_XML_ERROR,
++                           _("'value %d' is invalid for "
++                             "'sibling id %d' under NUMA 'cell id %d'"),
++                           sibling_value, sibling_id, cur_cell);
++            goto cleanup;
++        }
++
++        /* Apply the local / remote distance */
++        ldist = def->mem_nodes[cur_cell].distances;
++        if (!ldist) {
++            if (VIR_ALLOC_N(ldist, ndistances) < 0)
++                goto cleanup;
++
++            ldist[cur_cell].value = LOCAL_DISTANCE;
++            ldist[cur_cell].cellid = cur_cell;
++            def->mem_nodes[cur_cell].ndistances = ndistances;
++        }
++
++        ldist[sibling_id].cellid = sibling_id;
++        ldist[sibling_id].value = sibling_value;
++        def->mem_nodes[cur_cell].distances = ldist;
++
++        /* Apply symmetry if none given */
++        rdist = def->mem_nodes[sibling_id].distances;
++        if (!rdist) {
++            if (VIR_ALLOC_N(rdist, ndistances) < 0)
++                goto cleanup;
++
++            rdist[sibling_id].value = LOCAL_DISTANCE;
++            rdist[sibling_id].cellid = sibling_id;
++            def->mem_nodes[sibling_id].ndistances = ndistances;
++        }
++
++        rdist[cur_cell].cellid = cur_cell;
++        if (!rdist[cur_cell].value)
++            rdist[cur_cell].value = sibling_value;
++        def->mem_nodes[sibling_id].distances = rdist;
++    }
++
++    ret = 0;
++
++ cleanup:
++    if (ret) {
++        for (i = 0; i < ndistances; i++)
++            VIR_FREE(def->mem_nodes[i].distances);
++    }
++    VIR_FREE(nodes);
++    VIR_FREE(tmp);
++
++    return ret;
++}
++
+ int
+ virDomainNumaDefCPUParseXML(virDomainNumaPtr def,
+                             xmlXPathContextPtr ctxt)
+@@ -694,7 +849,7 @@ virDomainNumaDefCPUParseXML(virDomainNumaPtr def,
+     xmlNodePtr oldNode = ctxt->node;
+     char *tmp = NULL;
+     int n;
+-    size_t i;
++    size_t i, j;
+     int ret = -1;
+ 
+     /* check if NUMA definition is present */
+@@ -712,7 +867,6 @@ virDomainNumaDefCPUParseXML(virDomainNumaPtr def,
+     def->nmem_nodes = n;
+ 
+     for (i = 0; i < n; i++) {
+-        size_t j;
+         int rc;
+         unsigned int cur_cell = i;
+ 
+@@ -788,6 +942,10 @@ virDomainNumaDefCPUParseXML(virDomainNumaPtr def,
+             def->mem_nodes[cur_cell].memAccess = rc;
+             VIR_FREE(tmp);
+         }
++
++        /* Parse NUMA distances info */
++        if (virDomainNumaDefNodeDistanceParseXML(def, ctxt, cur_cell) < 0)
++                goto cleanup;
+     }
+ 
+     ret = 0;
+@@ -815,6 +973,8 @@ virDomainNumaDefCPUFormatXML(virBufferPtr buf,
+     virBufferAddLit(buf, "<numa>\n");
+     virBufferAdjustIndent(buf, 2);
+     for (i = 0; i < ncells; i++) {
++        int ndistances;
++
+         memAccess = virDomainNumaGetNodeMemoryAccessMode(def, i);
+ 
+         if (!(cpustr = virBitmapFormat(virDomainNumaGetNodeCpumask(def, i))))
+@@ -829,7 +989,32 @@ virDomainNumaDefCPUFormatXML(virBufferPtr buf,
+         if (memAccess)
+             virBufferAsprintf(buf, " memAccess='%s'",
+                               virDomainMemoryAccessTypeToString(memAccess));
+-        virBufferAddLit(buf, "/>\n");
++
++        ndistances = def->mem_nodes[i].ndistances;
++        if (!ndistances) {
++            virBufferAddLit(buf, "/>\n");
++        } else {
++            size_t j;
++            virDomainNumaDistancePtr distances = def->mem_nodes[i].distances;
++
++            virBufferAddLit(buf, ">\n");
++            virBufferAdjustIndent(buf, 2);
++            virBufferAddLit(buf, "<distances>\n");
++            virBufferAdjustIndent(buf, 2);
++            for (j = 0; j < ndistances; j++) {
++                if (distances[j].value) {
++                    virBufferAddLit(buf, "<sibling");
++                    virBufferAsprintf(buf, " id='%d'", distances[j].cellid);
++                    virBufferAsprintf(buf, " value='%d'", distances[j].value);
++                    virBufferAddLit(buf, "/>\n");
++                }
++            }
++            virBufferAdjustIndent(buf, -2);
++            virBufferAddLit(buf, "</distances>\n");
++            virBufferAdjustIndent(buf, -2);
++            virBufferAddLit(buf, "</cell>\n");
++        }
++
+         VIR_FREE(cpustr);
+     }
+     virBufferAdjustIndent(buf, -2);
+-- 
+2.15.1
+

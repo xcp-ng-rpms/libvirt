@@ -1,0 +1,72 @@
+From c696e4c1071b6a386d8c8428836eeb146886b644 Mon Sep 17 00:00:00 2001
+Message-Id: <c696e4c1071b6a386d8c8428836eeb146886b644@dist-git>
+From: John Ferlan <jferlan@redhat.com>
+Date: Thu, 9 Jul 2015 08:28:57 -0400
+Subject: [PATCH] RHEL: qemu: Add ability to set sgio values for hostdev
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1072736
+
+RHEL-only
+
+Add necessary checks in order to allow setting sgio values for a scsi
+host device
+
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_conf.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/src/qemu/qemu_conf.c b/src/qemu/qemu_conf.c
+index ec61c9c526..f1c142efb6 100644
+--- a/src/qemu/qemu_conf.c
++++ b/src/qemu/qemu_conf.c
+@@ -1570,6 +1570,7 @@ qemuSetUnprivSGIO(virDomainDeviceDefPtr dev)
+     virDomainDiskDefPtr disk = NULL;
+     virDomainHostdevDefPtr hostdev = NULL;
+     char *sysfs_path = NULL;
++    char *hostdev_path = NULL;
+     const char *path = NULL;
+     int val = -1;
+     int ret = -1;
+@@ -1591,14 +1592,10 @@ qemuSetUnprivSGIO(virDomainDeviceDefPtr dev)
+         if (!qemuIsSharedHostdev(hostdev))
+             return 0;
+ 
+-        if (hostdev->source.subsys.u.scsi.sgio) {
+-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                           _("'sgio' is not supported for SCSI "
+-                             "generic device yet "));
++        if (!(hostdev_path = qemuGetHostdevPath(hostdev)))
+             goto cleanup;
+-        }
+ 
+-        return 0;
++        path = hostdev_path;
+     } else {
+         return 0;
+     }
+@@ -1607,7 +1604,11 @@ qemuSetUnprivSGIO(virDomainDeviceDefPtr dev)
+         goto cleanup;
+ 
+     /* By default, filter the SG_IO commands, i.e. set unpriv_sgio to 0.  */
+-    val = (disk->sgio == VIR_DOMAIN_DEVICE_SGIO_UNFILTERED);
++    if (dev->type == VIR_DOMAIN_DEVICE_DISK)
++        val = (disk->sgio == VIR_DOMAIN_DEVICE_SGIO_UNFILTERED);
++    else
++        val = (hostdev->source.subsys.u.scsi.sgio ==
++               VIR_DOMAIN_DEVICE_SGIO_UNFILTERED);
+ 
+     /* Do not do anything if unpriv_sgio is not supported by the kernel and the
+      * whitelist is enabled.  But if requesting unfiltered access, always call
+@@ -1620,6 +1621,7 @@ qemuSetUnprivSGIO(virDomainDeviceDefPtr dev)
+     ret = 0;
+ 
+  cleanup:
++    VIR_FREE(hostdev_path);
+     VIR_FREE(sysfs_path);
+     return ret;
+ }
+-- 
+2.14.3
+

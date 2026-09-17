@@ -1,0 +1,35 @@
+From 8e0151c7b6ce80dc8145511848155e6170ce2bf6 Mon Sep 17 00:00:00 2001
+Message-Id: <8e0151c7b6ce80dc8145511848155e6170ce2bf6@dist-git>
+From: John Ferlan <jferlan@redhat.com>
+Date: Mon, 4 Dec 2017 13:38:53 +0100
+Subject: [PATCH] conf: Fix memory leak for distances in virDomainNumaFree
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+Commit id '74119a03f' neglected to clean up @distances when
+the numa definition is cleaned up.
+
+(cherry picked from commit 9f0ccc717ba9026c30ce38951a354dd66fa12e3b)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/numa_conf.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/conf/numa_conf.c b/src/conf/numa_conf.c
+index 8fc3b0a196..466b64d5fa 100644
+--- a/src/conf/numa_conf.c
++++ b/src/conf/numa_conf.c
+@@ -362,6 +362,9 @@ virDomainNumaFree(virDomainNumaPtr numa)
+     for (i = 0; i < numa->nmem_nodes; i++) {
+         virBitmapFree(numa->mem_nodes[i].cpumask);
+         virBitmapFree(numa->mem_nodes[i].nodeset);
++
++        if (numa->mem_nodes[i].ndistances > 0)
++            VIR_FREE(numa->mem_nodes[i].distances);
+     }
+     VIR_FREE(numa->mem_nodes);
+ 
+-- 
+2.15.1
+

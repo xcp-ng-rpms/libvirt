@@ -1,0 +1,47 @@
+From b5eaca77959775ffce33c459a06f0dcacee5338d Mon Sep 17 00:00:00 2001
+Message-Id: <b5eaca77959775ffce33c459a06f0dcacee5338d@dist-git>
+From: John Ferlan <jferlan@redhat.com>
+Date: Thu, 1 Mar 2018 07:08:32 -0500
+Subject: [PATCH] conf: Fix crash in virDomainDefCompatibleDevice
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Commit id 'edae027c' blindly assumed that the passed @oldDev
+parameter would not be NULL when calling virDomainDeviceGetInfo;
+however, commit id 'b6a264e8' passed NULL for AttachDevice
+callers under the premise that there wouldn't be a device
+to check/update against.
+
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 5535856f0e31aa6abf4cda11b5c53c0f164680f0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1557922
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/conf/domain_conf.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index f21c776ccd..7f4da169d6 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -27202,9 +27202,12 @@ virDomainDefCompatibleDevice(virDomainDefPtr def,
+ {
+     virDomainCompatibleDeviceData data = {
+         .newInfo = virDomainDeviceGetInfo(dev),
+-        .oldInfo = virDomainDeviceGetInfo(oldDev),
++        .oldInfo = NULL,
+     };
+ 
++    if (oldDev)
++        data.oldInfo = virDomainDeviceGetInfo(oldDev);
++
+     if (!virDomainDefHasUSB(def) &&
+         def->os.type != VIR_DOMAIN_OSTYPE_EXE &&
+         virDomainDeviceIsUSB(dev)) {
+-- 
+2.17.0
+

@@ -1,0 +1,212 @@
+From 2661dd59c5885adddb522be5e5542461f4e8bf3c Mon Sep 17 00:00:00 2001
+Message-Id: <2661dd59c5885adddb522be5e5542461f4e8bf3c@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Mon, 27 Nov 2017 14:21:01 +0100
+Subject: [PATCH] qemu: functions for dealing with input device namespaces and
+ labels
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Introudce functions that will let us create the evdevs in namespaces
+and label the devices on input device hotplug/hotunplug.
+
+(cherry picked from commit c4c7a18c4b8107b3521880eb20a94c928bdeacb0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509866
+
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c   | 72 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/qemu/qemu_domain.h   |  6 ++++
+ src/qemu/qemu_security.c | 58 ++++++++++++++++++++++++++++++++++++++
+ src/qemu/qemu_security.h |  6 ++++
+ 4 files changed, 142 insertions(+)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index dbe9ed5e98..138f773c22 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -9997,6 +9997,78 @@ qemuDomainNamespaceTeardownRNG(virQEMUDriverPtr driver,
+ }
+ 
+ 
++int
++qemuDomainNamespaceSetupInput(virDomainObjPtr vm,
++                              virDomainInputDefPtr input)
++{
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++    virQEMUDriverPtr driver = priv->driver;
++    virQEMUDriverConfigPtr cfg = NULL;
++    char **devMountsPath = NULL;
++    size_t ndevMountsPath = 0;
++    const char *path = NULL;
++    int ret = -1;
++
++    if (!(path = virDomainInputDefGetPath(input)))
++        return 0;
++
++    if (!qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT))
++        return 0;
++
++    cfg = virQEMUDriverGetConfig(driver);
++    if (qemuDomainGetPreservedMounts(cfg, vm,
++                                     &devMountsPath, NULL,
++                                     &ndevMountsPath) < 0)
++        goto cleanup;
++
++    if (qemuDomainAttachDeviceMknod(driver, vm, path,
++                                    devMountsPath, ndevMountsPath) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virStringListFreeCount(devMountsPath, ndevMountsPath);
++    virObjectUnref(cfg);
++    return ret;
++}
++
++
++int
++qemuDomainNamespaceTeardownInput(virDomainObjPtr vm,
++                                 virDomainInputDefPtr input)
++{
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++    virQEMUDriverPtr driver = priv->driver;
++    virQEMUDriverConfigPtr cfg = NULL;
++    char **devMountsPath = NULL;
++    size_t ndevMountsPath = 0;
++    const char *path = NULL;
++    int ret = -1;
++
++    if (!(path = virDomainInputDefGetPath(input)))
++        return 0;
++
++    if (!qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT))
++        return 0;
++
++    cfg = virQEMUDriverGetConfig(driver);
++    if (qemuDomainGetPreservedMounts(cfg, vm,
++                                     &devMountsPath, NULL,
++                                     &ndevMountsPath) < 0)
++        goto cleanup;
++
++    if (qemuDomainDetachDeviceUnlink(driver, vm, path,
++                                     devMountsPath, ndevMountsPath) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virStringListFreeCount(devMountsPath, ndevMountsPath);
++    virObjectUnref(cfg);
++    return ret;
++}
++
++
+ /**
+  * qemuDomainDiskLookupByNodename:
+  * @def: domain definition to look for the disk
+diff --git a/src/qemu/qemu_domain.h b/src/qemu/qemu_domain.h
+index caf583373f..1a82922415 100644
+--- a/src/qemu/qemu_domain.h
++++ b/src/qemu/qemu_domain.h
+@@ -969,6 +969,12 @@ int qemuDomainNamespaceTeardownRNG(virQEMUDriverPtr driver,
+                                    virDomainObjPtr vm,
+                                    virDomainRNGDefPtr rng);
+ 
++int qemuDomainNamespaceSetupInput(virDomainObjPtr vm,
++                                  virDomainInputDefPtr input);
++
++int qemuDomainNamespaceTeardownInput(virDomainObjPtr vm,
++                                     virDomainInputDefPtr input);
++
+ virDomainDiskDefPtr qemuDomainDiskLookupByNodename(virDomainDefPtr def,
+                                                    const char *nodename,
+                                                    virStorageSourcePtr *src,
+diff --git a/src/qemu/qemu_security.c b/src/qemu/qemu_security.c
+index 6fc3b0bb6e..e7d2bbd5a3 100644
+--- a/src/qemu/qemu_security.c
++++ b/src/qemu/qemu_security.c
+@@ -306,3 +306,61 @@ qemuSecurityRestoreMemoryLabel(virQEMUDriverPtr driver,
+     virSecurityManagerTransactionAbort(driver->securityManager);
+     return ret;
+ }
++
++
++int
++qemuSecuritySetInputLabel(virDomainObjPtr vm,
++                          virDomainInputDefPtr input)
++{
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++    virQEMUDriverPtr driver = priv->driver;
++    int ret = -1;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionStart(driver->securityManager) < 0)
++        goto cleanup;
++
++    if (virSecurityManagerSetInputLabel(driver->securityManager,
++                                        vm->def,
++                                        input) < 0)
++        goto cleanup;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionCommit(driver->securityManager,
++                                            vm->pid) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virSecurityManagerTransactionAbort(driver->securityManager);
++    return ret;
++}
++
++
++int
++qemuSecurityRestoreInputLabel(virDomainObjPtr vm,
++                              virDomainInputDefPtr input)
++{
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++    virQEMUDriverPtr driver = priv->driver;
++    int ret = -1;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionStart(driver->securityManager) < 0)
++        goto cleanup;
++
++    if (virSecurityManagerRestoreInputLabel(driver->securityManager,
++                                            vm->def,
++                                            input) < 0)
++        goto cleanup;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionCommit(driver->securityManager,
++                                            vm->pid) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virSecurityManagerTransactionAbort(driver->securityManager);
++    return ret;
++}
+diff --git a/src/qemu/qemu_security.h b/src/qemu/qemu_security.h
+index 7b25855bf9..76d63f06ec 100644
+--- a/src/qemu/qemu_security.h
++++ b/src/qemu/qemu_security.h
+@@ -70,6 +70,12 @@ int qemuSecurityRestoreMemoryLabel(virQEMUDriverPtr driver,
+                                    virDomainObjPtr vm,
+                                    virDomainMemoryDefPtr mem);
+ 
++int qemuSecuritySetInputLabel(virDomainObjPtr vm,
++                              virDomainInputDefPtr input);
++
++int qemuSecurityRestoreInputLabel(virDomainObjPtr vm,
++                                  virDomainInputDefPtr input);
++
+ /* Please note that for these APIs there is no wrapper yet. Do NOT blindly add
+  * new APIs here. If an API can touch a /dev file add a proper wrapper instead.
+  */
+-- 
+2.15.1
+

@@ -1,0 +1,39 @@
+From f022e7ba0c41592a8c117b29179cb3c8394210e6 Mon Sep 17 00:00:00 2001
+Message-Id: <f022e7ba0c41592a8c117b29179cb3c8394210e6@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:38 +0100
+Subject: [PATCH] util: Remove unused variable in virResctrlGetInfo
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit e28ccd2643b0c4cf35c4b53876fa46dc23007426)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 89b1382b68..684cb22fd8 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -392,7 +392,6 @@ int
+ virResctrlGetInfo(virResctrlInfoPtr resctrl)
+ {
+     DIR *dirp = NULL;
+-    char *info_path = NULL;
+     char *endptr = NULL;
+     char *tmp_str = NULL;
+     int ret = -1;
+@@ -507,7 +506,6 @@ virResctrlGetInfo(virResctrlInfoPtr resctrl)
+     ret = 0;
+  cleanup:
+     VIR_DIR_CLOSE(dirp);
+-    VIR_FREE(info_path);
+     if (i_type)
+         VIR_FREE(i_type->cbm_mask);
+     VIR_FREE(i_type);
+-- 
+2.16.1
+

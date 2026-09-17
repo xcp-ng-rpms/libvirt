@@ -1,0 +1,126 @@
+From bc3c538ac7b184edea12e1377ec7cdce1d7bb9d2 Mon Sep 17 00:00:00 2001
+Message-Id: <bc3c538ac7b184edea12e1377ec7cdce1d7bb9d2@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Thu, 7 Dec 2017 11:21:48 +0100
+Subject: [PATCH] qemu: Separate fetching CPU definitions from filling qemuCaps
+
+virQEMUCapsProbeQMPCPUDefinitions is now a small wrapper which fills in
+qemuCaps with CPU models fetched by virQEMUCapsFetchCPUDefinitions.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+(cherry picked from commit 4486dcdb4a386a906807d4eb7de586202e50cd18)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1521202
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 59 +++++++++++++++++++++++++++-----------------
+ src/qemu/qemu_capabilities.h |  1 +
+ 2 files changed, 38 insertions(+), 22 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 4301d2e799..4af1b6c662 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -2956,30 +2956,19 @@ virQEMUCapsProbeQMPMachineTypes(virQEMUCapsPtr qemuCaps,
+ }
+ 
+ 
+-int
+-virQEMUCapsProbeQMPCPUDefinitions(virQEMUCapsPtr qemuCaps,
+-                                  qemuMonitorPtr mon,
+-                                  bool tcg)
++virDomainCapsCPUModelsPtr
++virQEMUCapsFetchCPUDefinitions(qemuMonitorPtr mon)
+ {
+-    virDomainCapsCPUModelsPtr models;
+-    qemuMonitorCPUDefInfoPtr *cpus;
+-    int ncpus;
+-    int ret = -1;
++    virDomainCapsCPUModelsPtr models = NULL;
++    qemuMonitorCPUDefInfoPtr *cpus = NULL;
++    int ncpus = 0;
+     size_t i;
+ 
+-    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_QUERY_CPU_DEFINITIONS))
+-        return 0;
+-
+     if ((ncpus = qemuMonitorGetCPUDefinitions(mon, &cpus)) < 0)
+-        return -1;
++        goto error;
+ 
+     if (!(models = virDomainCapsCPUModelsNew(ncpus)))
+-        goto cleanup;
+-
+-    if (tcg || !virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM))
+-        qemuCaps->tcgCPUModels = models;
+-    else
+-        qemuCaps->kvmCPUModels = models;
++        goto error;
+ 
+     for (i = 0; i < ncpus; i++) {
+         virDomainCapsCPUUsable usable = VIR_DOMCAPS_CPU_USABLE_UNKNOWN;
+@@ -2991,18 +2980,44 @@ virQEMUCapsProbeQMPCPUDefinitions(virQEMUCapsPtr qemuCaps,
+ 
+         if (virDomainCapsCPUModelsAddSteal(models, &cpus[i]->name, usable,
+                                            &cpus[i]->blockers) < 0)
+-            goto cleanup;
++            goto error;
+     }
+ 
+-    ret = 0;
+-
+  cleanup:
+     for (i = 0; i < ncpus; i++)
+         qemuMonitorCPUDefInfoFree(cpus[i]);
+     VIR_FREE(cpus);
+-    return ret;
++    return models;
++
++ error:
++    virObjectUnref(models);
++    models = NULL;
++    goto cleanup;
+ }
+ 
++
++int
++virQEMUCapsProbeQMPCPUDefinitions(virQEMUCapsPtr qemuCaps,
++                                  qemuMonitorPtr mon,
++                                  bool tcg)
++{
++    virDomainCapsCPUModelsPtr models = NULL;
++
++    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_QUERY_CPU_DEFINITIONS))
++        return 0;
++
++    if (!(models = virQEMUCapsFetchCPUDefinitions(mon)))
++        return -1;
++
++    if (tcg || !virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM))
++        qemuCaps->tcgCPUModels = models;
++    else
++        qemuCaps->kvmCPUModels = models;
++
++    return 0;
++}
++
++
+ static int
+ virQEMUCapsProbeQMPHostCPU(virQEMUCapsPtr qemuCaps,
+                            qemuMonitorPtr mon,
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index c6eb9df146..0fb2a10a17 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -485,6 +485,7 @@ int virQEMUCapsAddCPUDefinitions(virQEMUCapsPtr qemuCaps,
+                                  virDomainCapsCPUUsable usable);
+ virDomainCapsCPUModelsPtr virQEMUCapsGetCPUDefinitions(virQEMUCapsPtr qemuCaps,
+                                                        virDomainVirtType type);
++virDomainCapsCPUModelsPtr virQEMUCapsFetchCPUDefinitions(qemuMonitorPtr mon);
+ 
+ typedef enum {
+     /* Host CPU definition reported in domain capabilities. */
+-- 
+2.15.1
+

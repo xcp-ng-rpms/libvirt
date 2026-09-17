@@ -1,0 +1,98 @@
+From f2a6092c61d5ef0f2648529a8c141d5f85551da1 Mon Sep 17 00:00:00 2001
+Message-Id: <f2a6092c61d5ef0f2648529a8c141d5f85551da1@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:44 +0100
+Subject: [PATCH] util: Extract path formatting into
+ virResctrlAllocDeterminePath
+
+We can use this from more places later, so just a future code de-duplication.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit b9ceacba7cd32eac55f383495319807430627b4c)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virresctrl.c    | 29 ++++++++++++++++++++---------
+ src/util/virresctrl.h    |  4 ++++
+ 3 files changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index ee75e09767..9c64d0cb97 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -2549,6 +2549,7 @@ virCacheTypeFromString;
+ virCacheTypeToString;
+ virResctrlAllocAddPID;
+ virResctrlAllocCreate;
++virResctrlAllocDeterminePath;
+ virResctrlAllocForeachSize;
+ virResctrlAllocFormat;
+ virResctrlAllocGetID;
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index fdd1ded6f7..e1c4998f71 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -1501,6 +1501,25 @@ virResctrlAllocMasksAssign(virResctrlInfoPtr resctrl,
+ }
+ 
+ 
++int
++virResctrlAllocDeterminePath(virResctrlAllocPtr alloc,
++                             const char *machinename)
++{
++    if (!alloc->id) {
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("Resctrl Allocation ID must be set before creation"));
++        return -1;
++    }
++
++    if (!alloc->path &&
++        virAsprintf(&alloc->path, "%s/%s-%s",
++                    SYSFS_RESCTRL_PATH, machinename, alloc->id) < 0)
++        return -1;
++
++    return 0;
++}
++
++
+ /* This checks if the directory for the alloc exists.  If not it tries to create
+  * it and apply appropriate alloc settings. */
+ int
+@@ -1522,15 +1541,7 @@ virResctrlAllocCreate(virResctrlInfoPtr resctrl,
+         return -1;
+     }
+ 
+-    if (!alloc->id) {
+-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                       _("Resctrl Allocation ID must be set before creation"));
+-        return -1;
+-    }
+-
+-    if (!alloc->path &&
+-        virAsprintf(&alloc->path, "%s/%s-%s",
+-                    SYSFS_RESCTRL_PATH, machinename, alloc->id) < 0)
++    if (virResctrlAllocDeterminePath(alloc, machinename) < 0)
+         return -1;
+ 
+     if (virFileExists(alloc->path)) {
+diff --git a/src/util/virresctrl.h b/src/util/virresctrl.h
+index 63a954feaa..5368ba2119 100644
+--- a/src/util/virresctrl.h
++++ b/src/util/virresctrl.h
+@@ -102,6 +102,10 @@ virResctrlAllocGetID(virResctrlAllocPtr alloc);
+ char *
+ virResctrlAllocFormat(virResctrlAllocPtr alloc);
+ 
++int
++virResctrlAllocDeterminePath(virResctrlAllocPtr alloc,
++                             const char *machinename);
++
+ int
+ virResctrlAllocCreate(virResctrlInfoPtr r_info,
+                       virResctrlAllocPtr alloc,
+-- 
+2.16.1
+

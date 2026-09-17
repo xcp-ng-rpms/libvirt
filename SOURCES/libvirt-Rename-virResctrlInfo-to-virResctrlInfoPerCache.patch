@@ -1,0 +1,97 @@
+From f8604e5cb29526fa7374b1a6690ac3b285720c3f Mon Sep 17 00:00:00 2001
+Message-Id: <f8604e5cb29526fa7374b1a6690ac3b285720c3f@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:24 +0100
+Subject: [PATCH] Rename virResctrlInfo to virResctrlInfoPerCache
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Just to ease the review of following patches.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit b2211a9e5492879be5f3c6ab9ed2d0dba849c964)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/conf/capabilities.c | 2 +-
+ src/conf/capabilities.h | 2 +-
+ src/util/virresctrl.c   | 4 ++--
+ src/util/virresctrl.h   | 8 ++++----
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/conf/capabilities.c b/src/conf/capabilities.c
+index 798c9bdaea..e93eaed2f0 100644
+--- a/src/conf/capabilities.c
++++ b/src/conf/capabilities.c
+@@ -904,7 +904,7 @@ virCapabilitiesFormatCaches(virBufferPtr buf,
+         virBufferSetChildIndent(&controlBuf, buf);
+         for (j = 0; j < bank->ncontrols; j++) {
+             const char *min_unit;
+-            virResctrlInfoPtr controls = bank->controls[j];
++            virResctrlInfoPerCachePtr controls = bank->controls[j];
+             unsigned long long gran_short_size = controls->granularity;
+             unsigned long long min_short_size = controls->min;
+ 
+diff --git a/src/conf/capabilities.h b/src/conf/capabilities.h
+index 5048fa819d..27b88cb5ed 100644
+--- a/src/conf/capabilities.h
++++ b/src/conf/capabilities.h
+@@ -148,7 +148,7 @@ struct _virCapsHostCacheBank {
+     virCacheType type;  /* Data, Instruction or Unified */
+     virBitmapPtr cpus;  /* All CPUs that share this bank */
+     size_t ncontrols;
+-    virResctrlInfoPtr *controls;
++    virResctrlInfoPerCachePtr *controls;
+ };
+ 
+ typedef struct _virCapsHost virCapsHost;
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 2a11825a52..050a08178e 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -59,7 +59,7 @@ int
+ virResctrlGetCacheInfo(unsigned int level,
+                        unsigned long long size,
+                        virCacheType scope,
+-                       virResctrlInfoPtr **controls,
++                       virResctrlInfoPerCachePtr **controls,
+                        size_t *ncontrols)
+ {
+     int ret = -1;
+@@ -69,7 +69,7 @@ virResctrlGetCacheInfo(unsigned int level,
+     char *type_upper = NULL;
+     unsigned int bits = 0;
+     unsigned int min_cbm_bits = 0;
+-    virResctrlInfoPtr control;
++    virResctrlInfoPerCachePtr control;
+ 
+     if (VIR_ALLOC(control) < 0)
+         goto cleanup;
+diff --git a/src/util/virresctrl.h b/src/util/virresctrl.h
+index 848b13e98a..42e8527803 100644
+--- a/src/util/virresctrl.h
++++ b/src/util/virresctrl.h
+@@ -36,9 +36,9 @@ typedef enum {
+ VIR_ENUM_DECL(virCache);
+ 
+ 
+-typedef struct _virResctrlInfo virResctrlInfo;
+-typedef virResctrlInfo *virResctrlInfoPtr;
+-struct _virResctrlInfo {
++typedef struct _virResctrlInfoPerCache virResctrlInfoPerCache;
++typedef virResctrlInfoPerCache *virResctrlInfoPerCachePtr;
++struct _virResctrlInfoPerCache {
+     /* Smallest possible increase of the allocation size in bytes */
+     unsigned long long granularity;
+     /* Minimal allocatable size in bytes (if different from granularity) */
+@@ -54,7 +54,7 @@ int
+ virResctrlGetCacheInfo(unsigned int level,
+                        unsigned long long size,
+                        virCacheType scope,
+-                       virResctrlInfoPtr **controls,
++                       virResctrlInfoPerCachePtr **controls,
+                        size_t *ncontrols);
+ 
+ int
+-- 
+2.16.1
+

@@ -1,0 +1,79 @@
+From 2cfaf0011f6462310f658a650fbdf998ed575ff0 Mon Sep 17 00:00:00 2001
+Message-Id: <2cfaf0011f6462310f658a650fbdf998ed575ff0@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 23 Nov 2017 19:02:16 +0100
+Subject: [PATCH] qemu: domain: Move video device validation into separate
+ function
+
+(cherry picked from commit ab948b6299aa311c07bb46b79c6ccbe7d46fb94e)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1511480
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c | 43 ++++++++++++++++++++++++++-----------------
+ 1 file changed, 26 insertions(+), 17 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 13b96368c1..1b72d95d7e 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3666,6 +3666,29 @@ qemuDomainDeviceDefValidateHostdev(const virDomainHostdevDef *hostdev,
+ }
+ 
+ 
++static int
++qemuDomainDeviceDefValidateVideo(const virDomainVideoDef *video)
++{
++    if (video->type == VIR_DOMAIN_VIDEO_TYPE_QXL &&
++        video->vgamem) {
++        if (video->vgamem < 1024) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                           _("value for 'vgamem' must be at least 1 MiB "
++                             "(1024 KiB)"));
++            return -1;
++        }
++
++        if (video->vgamem != VIR_ROUND_UP_POWER_OF_TWO(video->vgamem)) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                           _("value for 'vgamem' must be power of two"));
++            return -1;
++        }
++    }
++
++    return 0;
++}
++
++
+ static int
+ qemuDomainDeviceDefValidate(const virDomainDeviceDef *dev,
+                             const virDomainDef *def,
+@@ -3694,23 +3717,9 @@ qemuDomainDeviceDefValidate(const virDomainDeviceDef *dev,
+     } else if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV) {
+         if (qemuDomainDeviceDefValidateHostdev(dev->data.hostdev, def) < 0)
+             goto cleanup;
+-    }
+-
+-    if (dev->type == VIR_DOMAIN_DEVICE_VIDEO) {
+-        if (dev->data.video->type == VIR_DOMAIN_VIDEO_TYPE_QXL &&
+-            dev->data.video->vgamem) {
+-            if (dev->data.video->vgamem < 1024) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("value for 'vgamem' must be at least 1 MiB "
+-                                 "(1024 KiB)"));
+-                goto cleanup;
+-            }
+-            if (dev->data.video->vgamem != VIR_ROUND_UP_POWER_OF_TWO(dev->data.video->vgamem)) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("value for 'vgamem' must be power of two"));
+-                goto cleanup;
+-            }
+-        }
++    } else if (dev->type == VIR_DOMAIN_DEVICE_VIDEO) {
++        if (qemuDomainDeviceDefValidateVideo(dev->data.video) < 0)
++            goto cleanup;
+     }
+ 
+     ret = 0;
+-- 
+2.15.0
+

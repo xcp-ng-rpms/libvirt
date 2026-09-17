@@ -1,0 +1,89 @@
+From 82aa1d86ca26a7693b3817cc6331c9f094549098 Mon Sep 17 00:00:00 2001
+Message-Id: <82aa1d86ca26a7693b3817cc6331c9f094549098@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Wed, 7 Feb 2018 14:15:59 +0100
+Subject: [PATCH] qemu: driver: Extract vcpu halted state directly
+
+Don't extract the halted state into a separate array, but rater access
+the vcpu structures directly. We still need to call the vcpu helper to
+retrieve the performance statistics though.
+
+(cherry picked from commit 38d26864f7b0bf780ff07bf95c81a68699ddebaf)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1534585
+---
+ src/qemu/qemu_driver.c | 21 ++++++++++++++-------
+ 1 file changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index 0bc6eaa431..bfb3c3c4c5 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -19527,12 +19527,14 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+                        int *maxparams,
+                        unsigned int privflags)
+ {
++    virDomainVcpuDefPtr vcpu;
++    qemuDomainVcpuPrivatePtr vcpupriv;
+     size_t i;
+     int ret = -1;
+     char param_name[VIR_TYPED_PARAM_FIELD_LENGTH];
+     virVcpuInfoPtr cpuinfo = NULL;
+     unsigned long long *cpuwait = NULL;
+-    bool *cpuhalted = NULL;
++    bool vcpuhalted = false;
+ 
+     if (virTypedParamsAddUInt(&record->params,
+                               &record->nparams,
+@@ -19558,14 +19560,14 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+             /* it's ok to be silent and go ahead, because halted vcpu info
+              * wasn't here from the beginning */
+             virResetLastError();
+-        } else if (VIR_ALLOC_N(cpuhalted, virDomainDefGetVcpus(dom->def)) < 0) {
+-            goto cleanup;
++        } else {
++            vcpuhalted = true;
+         }
+     }
+ 
+     if (qemuDomainHelperGetVcpus(dom, cpuinfo, cpuwait,
+                                  virDomainDefGetVcpus(dom->def),
+-                                 NULL, 0, cpuhalted) < 0) {
++                                 NULL, 0, NULL) < 0) {
+         virResetLastError();
+         ret = 0; /* it's ok to be silent and go ahead */
+         goto cleanup;
+@@ -19602,14 +19604,20 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+                                     cpuwait[i]) < 0)
+             goto cleanup;
+ 
+-        if (cpuhalted) {
++        /* state below is extracted from the individual vcpu structs */
++        if (!(vcpu = virDomainDefGetVcpu(dom->def, cpuinfo[i].number)))
++            continue;
++
++        vcpupriv = QEMU_DOMAIN_VCPU_PRIVATE(vcpu);
++
++        if (vcpuhalted) {
+             snprintf(param_name, VIR_TYPED_PARAM_FIELD_LENGTH,
+                      "vcpu.%u.halted", cpuinfo[i].number);
+             if (virTypedParamsAddBoolean(&record->params,
+                                          &record->nparams,
+                                          maxparams,
+                                          param_name,
+-                                         cpuhalted[i]) < 0)
++                                         vcpupriv->halted) < 0)
+                 goto cleanup;
+         }
+     }
+@@ -19619,7 +19627,6 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+  cleanup:
+     VIR_FREE(cpuinfo);
+     VIR_FREE(cpuwait);
+-    VIR_FREE(cpuhalted);
+     return ret;
+ }
+ 
+-- 
+2.16.1
+

@@ -1,0 +1,105 @@
+From b3bd3f499bcf2fa9b2d61b5291e0a50bc7e8e595 Mon Sep 17 00:00:00 2001
+Message-Id: <b3bd3f499bcf2fa9b2d61b5291e0a50bc7e8e595@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Thu, 22 Feb 2018 13:51:36 +0100
+Subject: [PATCH] qemu: Fix updating device with boot order
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Commit v3.7.0-14-gc57f3fd2f8 prevented adding a <boot order='x'/>
+element to an inactive domain with global <boot dev='...'/> element.
+However, as a result of that change updating any device with boot order
+would fail with 'boot order X is already used by another device', where
+"another device" is in fact the device which is being updated.
+
+To fix this we have to ignore the device which we're about to update
+when checking for boot order conflicts.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1546971
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+(cherry picked from commit edae027cfe02be4863dcef1e7f0ea0564766e312)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1557922
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/conf/domain_conf.c | 29 ++++++++++++++++++++++-------
+ 1 file changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index e9bba70057..f21c776ccd 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -27166,18 +27166,30 @@ virDomainDeviceIsUSB(virDomainDeviceDefPtr dev)
+     return false;
+ }
+ 
++
++typedef struct _virDomainCompatibleDeviceData virDomainCompatibleDeviceData;
++typedef virDomainCompatibleDeviceData *virDomainCompatibleDeviceDataPtr;
++struct _virDomainCompatibleDeviceData {
++    virDomainDeviceInfoPtr newInfo;
++    virDomainDeviceInfoPtr oldInfo;
++};
++
+ static int
+ virDomainDeviceInfoCheckBootIndex(virDomainDefPtr def ATTRIBUTE_UNUSED,
+                                   virDomainDeviceDefPtr device ATTRIBUTE_UNUSED,
+                                   virDomainDeviceInfoPtr info,
+                                   void *opaque)
+ {
+-    virDomainDeviceInfoPtr newinfo = opaque;
++    virDomainCompatibleDeviceDataPtr data = opaque;
+ 
+-    if (info->bootIndex == newinfo->bootIndex) {
++    /* Ignore the device we're about to update */
++    if (data->oldInfo == info)
++        return 0;
++
++    if (info->bootIndex == data->newInfo->bootIndex) {
+         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                        _("boot order %u is already used by another device"),
+-                       newinfo->bootIndex);
++                       data->newInfo->bootIndex);
+         return -1;
+     }
+     return 0;
+@@ -27186,9 +27198,12 @@ virDomainDeviceInfoCheckBootIndex(virDomainDefPtr def ATTRIBUTE_UNUSED,
+ int
+ virDomainDefCompatibleDevice(virDomainDefPtr def,
+                              virDomainDeviceDefPtr dev,
+-                             virDomainDeviceDefPtr oldDev ATTRIBUTE_UNUSED)
++                             virDomainDeviceDefPtr oldDev)
+ {
+-    virDomainDeviceInfoPtr info = virDomainDeviceGetInfo(dev);
++    virDomainCompatibleDeviceData data = {
++        .newInfo = virDomainDeviceGetInfo(dev),
++        .oldInfo = virDomainDeviceGetInfo(oldDev),
++    };
+ 
+     if (!virDomainDefHasUSB(def) &&
+         def->os.type != VIR_DOMAIN_OSTYPE_EXE &&
+@@ -27199,7 +27214,7 @@ virDomainDefCompatibleDevice(virDomainDefPtr def,
+         return -1;
+     }
+ 
+-    if (info && info->bootIndex > 0) {
++    if (data.newInfo && data.newInfo->bootIndex > 0) {
+         if (def->os.nBootDevs > 0) {
+             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                            _("per-device boot elements cannot be used"
+@@ -27208,7 +27223,7 @@ virDomainDefCompatibleDevice(virDomainDefPtr def,
+         }
+         if (virDomainDeviceInfoIterate(def,
+                                        virDomainDeviceInfoCheckBootIndex,
+-                                       info) < 0)
++                                       &data) < 0)
+             return -1;
+     }
+ 
+-- 
+2.17.0
+

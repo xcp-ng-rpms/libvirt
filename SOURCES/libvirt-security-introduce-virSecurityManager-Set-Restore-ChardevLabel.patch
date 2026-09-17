@@ -1,0 +1,267 @@
+From 093bf98d1a85c1032228bb5bc2089bdd67949e48 Mon Sep 17 00:00:00 2001
+Message-Id: <093bf98d1a85c1032228bb5bc2089bdd67949e48@dist-git>
+From: Pavel Hrdina <phrdina@redhat.com>
+Date: Tue, 5 Dec 2017 14:02:33 +0100
+Subject: [PATCH] security: introduce
+ virSecurityManager(Set|Restore)ChardevLabel
+
+SELinux and DAC drivers already have both functions but they were not
+exported as public API of security manager.
+
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 1b4f66ec80d7751d4f4c858ffc8d5e3b936e72de)
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1465833
+
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/libvirt_private.syms        |  2 ++
+ src/security/security_dac.c     |  3 +++
+ src/security/security_driver.h  | 11 +++++++++++
+ src/security/security_manager.c | 40 ++++++++++++++++++++++++++++++++++++++
+ src/security/security_manager.h | 10 ++++++++++
+ src/security/security_nop.c     | 20 +++++++++++++++++++
+ src/security/security_selinux.c |  3 +++
+ src/security/security_stack.c   | 43 +++++++++++++++++++++++++++++++++++++++++
+ 8 files changed, 132 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 19c1ecc408..cb76bbac87 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1273,6 +1273,7 @@ virSecurityManagerPreFork;
+ virSecurityManagerReleaseLabel;
+ virSecurityManagerReserveLabel;
+ virSecurityManagerRestoreAllLabel;
++virSecurityManagerRestoreChardevLabel;
+ virSecurityManagerRestoreDiskLabel;
+ virSecurityManagerRestoreHostdevLabel;
+ virSecurityManagerRestoreImageLabel;
+@@ -1280,6 +1281,7 @@ virSecurityManagerRestoreInputLabel;
+ virSecurityManagerRestoreMemoryLabel;
+ virSecurityManagerRestoreSavedStateLabel;
+ virSecurityManagerSetAllLabel;
++virSecurityManagerSetChardevLabel;
+ virSecurityManagerSetChildProcessLabel;
+ virSecurityManagerSetDaemonSocketLabel;
+ virSecurityManagerSetDiskLabel;
+diff --git a/src/security/security_dac.c b/src/security/security_dac.c
+index 24d9264216..4e787fb038 100644
+--- a/src/security/security_dac.c
++++ b/src/security/security_dac.c
+@@ -2135,4 +2135,7 @@ virSecurityDriver virSecurityDriverDAC = {
+     .getBaseLabel                       = virSecurityDACGetBaseLabel,
+ 
+     .domainSetPathLabel                 = virSecurityDACDomainSetPathLabel,
++
++    .domainSetSecurityChardevLabel      = virSecurityDACSetChardevLabel,
++    .domainRestoreSecurityChardevLabel  = virSecurityDACRestoreChardevLabel,
+ };
+diff --git a/src/security/security_driver.h b/src/security/security_driver.h
+index 1b3070d06d..47dad8ba20 100644
+--- a/src/security/security_driver.h
++++ b/src/security/security_driver.h
+@@ -140,6 +140,14 @@ typedef int (*virSecurityDomainRestoreInputLabel) (virSecurityManagerPtr mgr,
+ typedef int (*virSecurityDomainSetPathLabel) (virSecurityManagerPtr mgr,
+                                               virDomainDefPtr def,
+                                               const char *path);
++typedef int (*virSecurityDomainSetChardevLabel) (virSecurityManagerPtr mgr,
++                                                 virDomainDefPtr def,
++                                                 virDomainChrSourceDefPtr dev_source,
++                                                 bool chardevStdioLogd);
++typedef int (*virSecurityDomainRestoreChardevLabel) (virSecurityManagerPtr mgr,
++                                                     virDomainDefPtr def,
++                                                     virDomainChrSourceDefPtr dev_source,
++                                                     bool chardevStdioLogd);
+ 
+ 
+ struct _virSecurityDriver {
+@@ -201,6 +209,9 @@ struct _virSecurityDriver {
+     virSecurityDriverGetBaseLabel getBaseLabel;
+ 
+     virSecurityDomainSetPathLabel domainSetPathLabel;
++
++    virSecurityDomainSetChardevLabel domainSetSecurityChardevLabel;
++    virSecurityDomainRestoreChardevLabel domainRestoreSecurityChardevLabel;
+ };
+ 
+ virSecurityDriverPtr virSecurityDriverLookup(const char *name,
+diff --git a/src/security/security_manager.c b/src/security/security_manager.c
+index 3cf12188a0..9249aba1fa 100644
+--- a/src/security/security_manager.c
++++ b/src/security/security_manager.c
+@@ -1152,3 +1152,43 @@ virSecurityManagerRestoreInputLabel(virSecurityManagerPtr mgr,
+     virReportUnsupportedError();
+     return -1;
+ }
++
++
++int
++virSecurityManagerSetChardevLabel(virSecurityManagerPtr mgr,
++                                  virDomainDefPtr def,
++                                  virDomainChrSourceDefPtr dev_source,
++                                  bool chardevStdioLogd)
++{
++    if (mgr->drv->domainSetSecurityChardevLabel) {
++        int ret;
++        virObjectLock(mgr);
++        ret = mgr->drv->domainSetSecurityChardevLabel(mgr, def, dev_source,
++                                                      chardevStdioLogd);
++        virObjectUnlock(mgr);
++        return ret;
++    }
++
++    virReportUnsupportedError();
++    return -1;
++}
++
++
++int
++virSecurityManagerRestoreChardevLabel(virSecurityManagerPtr mgr,
++                                      virDomainDefPtr def,
++                                      virDomainChrSourceDefPtr dev_source,
++                                      bool chardevStdioLogd)
++{
++    if (mgr->drv->domainRestoreSecurityChardevLabel) {
++        int ret;
++        virObjectLock(mgr);
++        ret = mgr->drv->domainRestoreSecurityChardevLabel(mgr, def, dev_source,
++                                                          chardevStdioLogd);
++        virObjectUnlock(mgr);
++        return ret;
++    }
++
++    virReportUnsupportedError();
++    return -1;
++}
+diff --git a/src/security/security_manager.h b/src/security/security_manager.h
+index 87fe890692..acc0dab374 100644
+--- a/src/security/security_manager.h
++++ b/src/security/security_manager.h
+@@ -184,4 +184,14 @@ int virSecurityManagerDomainSetPathLabel(virSecurityManagerPtr mgr,
+                                          virDomainDefPtr vm,
+                                          const char *path);
+ 
++int virSecurityManagerSetChardevLabel(virSecurityManagerPtr mgr,
++                                      virDomainDefPtr def,
++                                      virDomainChrSourceDefPtr dev_source,
++                                      bool chardevStdioLogd);
++
++int virSecurityManagerRestoreChardevLabel(virSecurityManagerPtr mgr,
++                                          virDomainDefPtr def,
++                                          virDomainChrSourceDefPtr dev_source,
++                                          bool chardevStdioLogd);
++
+ #endif /* VIR_SECURITY_MANAGER_H__ */
+diff --git a/src/security/security_nop.c b/src/security/security_nop.c
+index cfb032c686..ff739f8199 100644
+--- a/src/security/security_nop.c
++++ b/src/security/security_nop.c
+@@ -262,6 +262,23 @@ virSecurityDomainInputLabelNop(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
+     return 0;
+ }
+ 
++static int
++virSecurityDomainSetChardevLabelNop(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
++                                    virDomainDefPtr def ATTRIBUTE_UNUSED,
++                                    virDomainChrSourceDefPtr dev_source ATTRIBUTE_UNUSED,
++                                    bool chardevStdioLogd ATTRIBUTE_UNUSED)
++{
++    return 0;
++}
++
++static int
++virSecurityDomainRestoreChardevLabelNop(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
++                                        virDomainDefPtr def ATTRIBUTE_UNUSED,
++                                        virDomainChrSourceDefPtr dev_source ATTRIBUTE_UNUSED,
++                                        bool chardevStdioLogd ATTRIBUTE_UNUSED)
++{
++    return 0;
++}
+ 
+ virSecurityDriver virSecurityDriverNop = {
+     .privateDataLen                     = 0,
+@@ -314,4 +331,7 @@ virSecurityDriver virSecurityDriverNop = {
+     .domainGetSecurityMountOptions      = virSecurityDomainGetMountOptionsNop,
+ 
+     .getBaseLabel                       = virSecurityGetBaseLabel,
++
++    .domainSetSecurityChardevLabel      = virSecurityDomainSetChardevLabelNop,
++    .domainRestoreSecurityChardevLabel  = virSecurityDomainRestoreChardevLabelNop,
+ };
+diff --git a/src/security/security_selinux.c b/src/security/security_selinux.c
+index d44de72e02..0121b22da5 100644
+--- a/src/security/security_selinux.c
++++ b/src/security/security_selinux.c
+@@ -3089,4 +3089,7 @@ virSecurityDriver virSecurityDriverSELinux = {
+     .getBaseLabel                       = virSecuritySELinuxGetBaseLabel,
+ 
+     .domainSetPathLabel                 = virSecuritySELinuxDomainSetPathLabel,
++
++    .domainSetSecurityChardevLabel      = virSecuritySELinuxSetChardevLabel,
++    .domainRestoreSecurityChardevLabel  = virSecuritySELinuxRestoreChardevLabel,
+ };
+diff --git a/src/security/security_stack.c b/src/security/security_stack.c
+index cd916382b2..0375e7d89d 100644
+--- a/src/security/security_stack.c
++++ b/src/security/security_stack.c
+@@ -719,6 +719,46 @@ virSecurityStackDomainSetPathLabel(virSecurityManagerPtr mgr,
+     return rc;
+ }
+ 
++static int
++virSecurityStackDomainSetChardevLabel(virSecurityManagerPtr mgr,
++                                      virDomainDefPtr def,
++                                      virDomainChrSourceDefPtr dev_source,
++                                      bool chardevStdioLogd)
++{
++    virSecurityStackDataPtr priv = virSecurityManagerGetPrivateData(mgr);
++    virSecurityStackItemPtr item = priv->itemsHead;
++    int rc = 0;
++
++    for (; item; item = item->next) {
++        if (virSecurityManagerSetChardevLabel(item->securityManager,
++                                              def, dev_source,
++                                              chardevStdioLogd) < 0)
++            rc = -1;
++    }
++
++    return rc;
++}
++
++static int
++virSecurityStackDomainRestoreChardevLabel(virSecurityManagerPtr mgr,
++                                          virDomainDefPtr def,
++                                          virDomainChrSourceDefPtr dev_source,
++                                          bool chardevStdioLogd)
++{
++    virSecurityStackDataPtr priv = virSecurityManagerGetPrivateData(mgr);
++    virSecurityStackItemPtr item = priv->itemsHead;
++    int rc = 0;
++
++    for (; item; item = item->next) {
++        if (virSecurityManagerRestoreChardevLabel(item->securityManager,
++                                                  def, dev_source,
++                                                  chardevStdioLogd) < 0)
++            rc = -1;
++    }
++
++    return rc;
++}
++
+ virSecurityDriver virSecurityDriverStack = {
+     .privateDataLen                     = sizeof(virSecurityStackData),
+     .name                               = "stack",
+@@ -778,4 +818,7 @@ virSecurityDriver virSecurityDriverStack = {
+     .getBaseLabel                       = virSecurityStackGetBaseLabel,
+ 
+     .domainSetPathLabel                 = virSecurityStackDomainSetPathLabel,
++
++    .domainSetSecurityChardevLabel      = virSecurityStackDomainSetChardevLabel,
++    .domainRestoreSecurityChardevLabel  = virSecurityStackDomainRestoreChardevLabel,
+ };
+-- 
+2.15.1
+

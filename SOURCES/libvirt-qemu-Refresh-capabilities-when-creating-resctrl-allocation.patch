@@ -1,0 +1,46 @@
+From 606a93eac7434332c39c54015d1e774293e9605d Mon Sep 17 00:00:00 2001
+Message-Id: <606a93eac7434332c39c54015d1e774293e9605d@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Mon, 5 Feb 2018 13:39:20 +0100
+Subject: [PATCH] qemu: Refresh capabilities when creating resctrl allocation
+
+Since one of the things in capabilities (info from resctrl updated with data
+about caches) can be change on the system by remounting the /sys/fs/resctrl with
+different options, the capabilities need to be refreshed.  There is a better fix
+in the works, but it's going to be way bigger than this (hence the XXX note
+there), so for the time being let's workaround this.  And in order not to slow
+down the domain starting, only get the capabilities if there are any cachetunes.
+
+Relates-to: https://bugzilla.redhat.com/show_bug.cgi?id=1540780
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 3cac2a6c93c424d55b865a05635d96e0b1aa9d36)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_process.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 3853112924..c86f7d3c5b 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -2511,9 +2511,15 @@ qemuProcessResctrlCreate(virQEMUDriverPtr driver,
+ {
+     int ret = -1;
+     size_t i = 0;
+-    virCapsPtr caps = virQEMUDriverGetCapabilities(driver, false);
++    virCapsPtr caps = NULL;
+     qemuDomainObjPrivatePtr priv = vm->privateData;
+ 
++    if (!vm->def->ncachetunes)
++        return 0;
++
++    /* Force capability refresh since resctrl info can change
++     * XXX: move cache info into virresctrl so caps are not needed */
++    caps = virQEMUDriverGetCapabilities(driver, true);
+     if (!caps)
+         return -1;
+ 
+-- 
+2.16.1
+

@@ -1,0 +1,34 @@
+From 27e59af45b7e283b94617330e3327eff4bd91bdb Mon Sep 17 00:00:00 2001
+Message-Id: <27e59af45b7e283b94617330e3327eff4bd91bdb@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Mon, 22 Jan 2018 14:51:11 +0100
+Subject: [PATCH] qemu: Don't initialize struct utsname
+
+It breaks the build and it is not really useful for anything.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+(cherry picked from commit ba9ea2ad7dd15d9a2e9c7a5b9a8a3e7066351015)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1525182
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index af4875f82e..bd80edc978 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -5416,7 +5416,7 @@ virQEMUCapsCacheNew(const char *libDir,
+     char *capsCacheDir = NULL;
+     virFileCachePtr cache = NULL;
+     virQEMUCapsCachePrivPtr priv = NULL;
+-    struct utsname uts = { 0 };
++    struct utsname uts;
+ 
+     if (virAsprintf(&capsCacheDir, "%s/capabilities", cacheDir) < 0)
+         goto error;
+-- 
+2.16.1
+

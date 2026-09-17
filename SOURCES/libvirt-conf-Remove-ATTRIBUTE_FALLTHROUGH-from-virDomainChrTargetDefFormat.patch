@@ -1,0 +1,55 @@
+From d91de09fa0a626e200ac0db133a6af69a0706105 Mon Sep 17 00:00:00 2001
+Message-Id: <d91de09fa0a626e200ac0db133a6af69a0706105@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:04 +0100
+Subject: [PATCH] conf: Remove ATTRIBUTE_FALLTHROUGH from
+ virDomainChrTargetDefFormat()
+
+Formatting the <target/> element for serial devices will become a
+bit more complicated later on, and leaving the fallthrough behavior
+there would do nothing but complicate it further.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 7983068fa50ea5222e62b24ea912a529994276f0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 2489705d6b..44d9bbe01d 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -24010,14 +24010,18 @@ virDomainChrTargetDefFormat(virBufferPtr buf,
+             return -1;
+         }
+ 
++        virBufferAddLit(buf, "<target ");
++
+         if (def->targetType != VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE) {
+             virBufferAsprintf(buf,
+-                              "<target type='%s' port='%d'/>\n",
+-                              targetType,
+-                              def->target.port);
+-            break;
++                              "type='%s' ",
++                              targetType);
+         }
+-        ATTRIBUTE_FALLTHROUGH;
++
++        virBufferAsprintf(buf,
++                          "port='%d'/>\n",
++                          def->target.port);
++        break;
+ 
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL:
+         virBufferAsprintf(buf, "<target port='%d'/>\n",
+-- 
+2.15.1
+

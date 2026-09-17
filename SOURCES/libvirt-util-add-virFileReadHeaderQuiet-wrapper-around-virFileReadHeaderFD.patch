@@ -1,0 +1,75 @@
+From 706f4e3526b154c4b65c242eba039a53c9386ca8 Mon Sep 17 00:00:00 2001
+Message-Id: <706f4e3526b154c4b65c242eba039a53c9386ca8@dist-git>
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 12 Dec 2017 16:23:40 +0100
+Subject: [PATCH] util: add virFileReadHeaderQuiet wrapper around
+ virFileReadHeaderFD
+
+CVE-2017-5715
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virfile.c       | 19 +++++++++++++++++++
+ src/util/virfile.h       |  2 ++
+ 3 files changed, 22 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 478b3b3a6f..85b15314a9 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1752,6 +1752,7 @@ virFileReadAll;
+ virFileReadAllQuiet;
+ virFileReadBufQuiet;
+ virFileReadHeaderFD;
++virFileReadHeaderQuiet;
+ virFileReadLimFD;
+ virFileReadLink;
+ virFileReadValueBitmap;
+diff --git a/src/util/virfile.c b/src/util/virfile.c
+index 82cb36dbca..5e9bd2007a 100644
+--- a/src/util/virfile.c
++++ b/src/util/virfile.c
+@@ -1367,6 +1367,25 @@ virFileReadHeaderFD(int fd, int maxlen, char **buf)
+ }
+ 
+ 
++int
++virFileReadHeaderQuiet(const char *path,
++                       int maxlen,
++                       char **buf)
++{
++    int fd;
++    int len;
++
++    fd = open(path, O_RDONLY);
++    if (fd < 0)
++        return -1;
++
++    len = virFileReadHeaderFD(fd, maxlen, buf);
++    VIR_FORCE_CLOSE(fd);
++
++    return len;
++}
++
++
+ /* A wrapper around saferead_lim that maps a failure due to
+    exceeding the maximum size limitation to EOVERFLOW.  */
+ int
+diff --git a/src/util/virfile.h b/src/util/virfile.h
+index 91d3186223..ea1faed2e4 100644
+--- a/src/util/virfile.h
++++ b/src/util/virfile.h
+@@ -131,6 +131,8 @@ int virFileDeleteTree(const char *dir);
+ 
+ int virFileReadHeaderFD(int fd, int maxlen, char **buf)
+     ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(3);
++int virFileReadHeaderQuiet(const char *path, int maxlen, char **buf)
++    ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3);
+ int virFileReadLimFD(int fd, int maxlen, char **buf)
+     ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(3);
+ int virFileReadAll(const char *path, int maxlen, char **buf)
+-- 
+2.15.1
+

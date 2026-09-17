@@ -1,0 +1,36 @@
+From a29ee6823d600aaf40c06c67e954233c36624774 Mon Sep 17 00:00:00 2001
+Message-Id: <a29ee6823d600aaf40c06c67e954233c36624774@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Mon, 11 Dec 2017 14:34:20 +0100
+Subject: [PATCH] qemu: Avoid comparing size_t with -1
+
+ncpus would be -1 on error and the cleanup for loop would not be skipped
+in this case.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit fd754cb69cb073d370d73b9eab65db8ce1400096)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1521202
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 4af1b6c662..165fdbc5ea 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -2965,7 +2965,7 @@ virQEMUCapsFetchCPUDefinitions(qemuMonitorPtr mon)
+     size_t i;
+ 
+     if ((ncpus = qemuMonitorGetCPUDefinitions(mon, &cpus)) < 0)
+-        goto error;
++        return NULL;
+ 
+     if (!(models = virDomainCapsCPUModelsNew(ncpus)))
+         goto error;
+-- 
+2.15.1
+

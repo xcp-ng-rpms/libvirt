@@ -1,0 +1,162 @@
+From c77b3a25ee9f277359018a1b65ea73fefd9d4c4e Mon Sep 17 00:00:00 2001
+Message-Id: <c77b3a25ee9f277359018a1b65ea73fefd9d4c4e@dist-git>
+From: Pino Toscano <ptoscano@redhat.com>
+Date: Wed, 29 Nov 2017 16:22:53 +0100
+Subject: [PATCH] qemu: add QEMU_CAPS_DEVICE_SCLPLMCONSOLE
+
+Add a separate capability for the sclplmconsole device, and check it
+specifically instead of using QEMU_CAPS_DEVICE_SCLPCONSOLE for that too.
+
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+(cherry picked from commit 593639ffffa43f52aae53038bc8bd75ec700b12f)
+
+ Conflicts:
+	src/qemu/qemu_capabilities.c
+	src/qemu/qemu_capabilities.h
+	tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+	tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
+
+	Insert the new capability in the right place, both in the
+	declaration and in caps.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                     |  3 ++-
+ src/qemu/qemu_capabilities.h                     |  2 +-
+ src/qemu/qemu_command.c                          | 22 +++++++++++++++++++++-
+ tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml |  1 +
+ tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml  |  1 +
+ tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml  |  1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml  |  1 +
+ 7 files changed, 28 insertions(+), 3 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 374a2e79a7..322e0423d6 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -448,7 +448,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "spapr-vty",
+ 
+               /* 275 */
+-
++              "sclplmconsole",
+ 
+               "disk-share-rw",
+     );
+@@ -1680,6 +1680,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "qemu-xhci", QEMU_CAPS_DEVICE_QEMU_XHCI },
+     { "spapr-pci-host-bridge", QEMU_CAPS_DEVICE_SPAPR_PCI_HOST_BRIDGE },
+     { "spapr-vty", QEMU_CAPS_DEVICE_SPAPR_VTY },
++    { "sclplmconsole", QEMU_CAPS_DEVICE_SCLPLMCONSOLE },
+ };
+ 
+ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index f115738b6b..c3a15948cf 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -434,7 +434,7 @@ typedef enum {
+     QEMU_CAPS_DEVICE_SPAPR_VTY, /* -device spapr-vty */
+ 
+     /* 275 */
+-
++    QEMU_CAPS_DEVICE_SCLPLMCONSOLE, /* -device sclplmconsole */
+ 
+     QEMU_CAPS_DISK_SHARE_RW, /* share-rw=on for concurrent disk access */
+ 
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 092d820b1d..19a819a3aa 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9419,7 +9419,6 @@ qemuBuildConsoleCommandLine(virLogManagerPtr logManager,
+ 
+         switch (console->targetType) {
+         case VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_SCLP:
+-        case VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_SCLPLM:
+             if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_SCLPCONSOLE)) {
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                                _("sclpconsole is not supported in this QEMU binary"));
+@@ -9440,6 +9439,27 @@ qemuBuildConsoleCommandLine(virLogManagerPtr logManager,
+                 return -1;
+             break;
+ 
++        case VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_SCLPLM:
++            if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_SCLPLMCONSOLE)) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("sclplmconsole is not supported in this QEMU binary"));
++                return -1;
++            }
++
++            if (!(devstr = qemuBuildChrChardevStr(logManager, cmd, cfg, def,
++                                                  console->source,
++                                                  console->info.alias,
++                                                  qemuCaps, true,
++                                                  chardevStdioLogd)))
++                return -1;
++            virCommandAddArg(cmd, "-chardev");
++            virCommandAddArg(cmd, devstr);
++            VIR_FREE(devstr);
++
++            if (qemuBuildChrDeviceCommandLine(cmd, def, console, qemuCaps) < 0)
++                return -1;
++            break;
++
+         case VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_VIRTIO:
+             if (!(devstr = qemuBuildChrChardevStr(logManager, cmd, cfg, def,
+                                                   console->source,
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+index a6900bf1ef..463c30c77a 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+@@ -141,6 +141,7 @@
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='sclplmconsole'/>
+   <flag name='disk-share-rw'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+diff --git a/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
+index c5dfa2a9d0..c2f310cd46 100644
+--- a/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
+@@ -135,6 +135,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='sclplmconsole'/>
+   <version>2007000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
+index 6d26896ef9..f6e024dc61 100644
+--- a/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
+@@ -137,6 +137,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='sclplmconsole'/>
+   <version>2007093</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
+index 4150b8eee7..5c4a02c8b1 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
+@@ -138,6 +138,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='sclplmconsole'/>
+   <flag name='disk-share-rw'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
+-- 
+2.15.1
+

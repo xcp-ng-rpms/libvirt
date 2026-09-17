@@ -1,0 +1,37 @@
+From 73e3efc5dae126514b00a8538664609810cadbc4 Mon Sep 17 00:00:00 2001
+Message-Id: <73e3efc5dae126514b00a8538664609810cadbc4@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 13 Nov 2017 13:48:09 +0100
+Subject: [PATCH] conf: Fix message when maximum vCPU count is less than
+ current
+
+Reword the message and drop the numbers (which were reversed) from it
+so that it actually makes sense.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1509151
+(cherry picked from commit 50712e14f40ffdac8a71ce9ef091e4e7bd822585)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 3b337d1a64..ca5d0bcc54 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -1505,9 +1505,9 @@ virDomainDefSetVcpus(virDomainDefPtr def,
+     size_t i;
+ 
+     if (vcpus > def->maxvcpus) {
+-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+-                       _("maxvcpus must not be less than current vcpus (%u < %zu)"),
+-                       vcpus, def->maxvcpus);
++        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                       _("maximum vCPU count must not be less than current "
++                         "vCPU count"));
+         return -1;
+     }
+ 
+-- 
+2.15.0
+

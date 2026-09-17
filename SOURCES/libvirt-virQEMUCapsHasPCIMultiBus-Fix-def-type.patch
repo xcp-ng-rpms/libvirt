@@ -1,0 +1,49 @@
+From 2e7743888fda6297e07527370c1d4c4b45217962 Mon Sep 17 00:00:00 2001
+Message-Id: <2e7743888fda6297e07527370c1d4c4b45217962@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 20 Nov 2017 11:08:52 +0100
+Subject: [PATCH] virQEMUCapsHasPCIMultiBus: Fix @def type
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1434451
+
+This function only queries domain @def. It doesn't change it.
+Therefore it should take const pointer.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 481f8fdca1528f1398ef458b7c37ba57ea55dc68)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 2 +-
+ src/qemu/qemu_capabilities.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 3793f16590..f30d2fa09e 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -2391,7 +2391,7 @@ virQEMUCapsGet(virQEMUCapsPtr qemuCaps,
+ 
+ 
+ bool virQEMUCapsHasPCIMultiBus(virQEMUCapsPtr qemuCaps,
+-                               virDomainDefPtr def)
++                               const virDomainDef *def)
+ {
+     /* x86_64 and i686 support PCI-multibus on all machine types
+      * since forever */
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index f0e2e9016f..e7d766f801 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -451,7 +451,7 @@ bool virQEMUCapsGet(virQEMUCapsPtr qemuCaps,
+                     virQEMUCapsFlags flag);
+ 
+ bool virQEMUCapsHasPCIMultiBus(virQEMUCapsPtr qemuCaps,
+-                               virDomainDefPtr def);
++                               const virDomainDef *def);
+ 
+ bool virQEMUCapsSupportsVmport(virQEMUCapsPtr qemuCaps,
+                                const virDomainDef *def);
+-- 
+2.15.0
+

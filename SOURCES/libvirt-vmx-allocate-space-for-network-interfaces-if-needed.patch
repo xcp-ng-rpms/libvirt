@@ -1,0 +1,58 @@
+From 84131c477c2c5b512723e96b59528a93ed7d41c4 Mon Sep 17 00:00:00 2001
+Message-Id: <84131c477c2c5b512723e96b59528a93ed7d41c4@dist-git>
+From: Pino Toscano <ptoscano@redhat.com>
+Date: Thu, 12 Apr 2018 17:26:19 +0200
+Subject: [PATCH] vmx: allocate space for network interfaces if needed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Dynamically grow the array of network interfaces for each interface
+read, instead of using a single array of size 4.  This way, in the
+future it will be easier to not limit the number of network interfaces
+(which this patch still does not change).
+
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+(cherry picked from commit 6d394989fda53b53f0a21522bebe44ea01a40de9)
+
+https: //bugzilla.redhat.com/show_bug.cgi?id=1566524
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/vmx/vmx.c | 17 +++++++----------
+ 1 file changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/src/vmx/vmx.c b/src/vmx/vmx.c
+index 85bf195cd7..3433f39d5c 100644
+--- a/src/vmx/vmx.c
++++ b/src/vmx/vmx.c
+@@ -1751,19 +1751,16 @@ virVMXParseConfig(virVMXContext *ctx,
+     }
+ 
+     /* def:nets */
+-    if (VIR_ALLOC_N(def->nets, 4) < 0)
+-        goto cleanup;
+-
+-    def->nnets = 0;
+-
+     for (controller = 0; controller < 4; ++controller) {
+-        if (virVMXParseEthernet(conf, controller,
+-                                &def->nets[def->nnets]) < 0) {
++        virDomainNetDefPtr net = NULL;
++        if (virVMXParseEthernet(conf, controller, &net) < 0)
+             goto cleanup;
+-        }
+ 
+-        if (def->nets[def->nnets] != NULL)
+-            ++def->nnets;
++        if (!net)
++            continue;
++
++        if (VIR_APPEND_ELEMENT(def->nets, def->nnets, net) < 0)
++            goto cleanup;
+     }
+ 
+     /* def:inputs */
+-- 
+2.17.0
+

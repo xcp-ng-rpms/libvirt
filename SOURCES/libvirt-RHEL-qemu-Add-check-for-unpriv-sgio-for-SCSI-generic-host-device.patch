@@ -1,0 +1,59 @@
+From aa370aac88baeea6a35558f3c22a9206cc667eb9 Mon Sep 17 00:00:00 2001
+Message-Id: <aa370aac88baeea6a35558f3c22a9206cc667eb9@dist-git>
+From: John Ferlan <jferlan@redhat.com>
+Date: Thu, 9 Jul 2015 08:28:58 -0400
+Subject: [PATCH] RHEL: qemu: Add check for unpriv sgio for SCSI generic host
+ device
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1072736
+
+RHEL-only
+
+Check if the hostdev has set the sgio filtered/unfiltered and handle
+appropriately.
+
+This restores functionality removed by upstream commit id 'ce346623'
+to remove sgio support for the SCSI generic host device.
+
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_conf.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/qemu/qemu_conf.c b/src/qemu/qemu_conf.c
+index f1c142efb6..4e5b33b788 100644
+--- a/src/qemu/qemu_conf.c
++++ b/src/qemu/qemu_conf.c
+@@ -1410,6 +1410,8 @@ qemuAddSharedHostdev(virQEMUDriverPtr driver,
+ {
+     char *dev_path = NULL;
+     char *key = NULL;
++    virDomainHostdevSubsysSCSIPtr scsisrc = &hostdev->source.subsys.u.scsi;
++    virDomainHostdevSubsysSCSIHostPtr scsihostsrc = &scsisrc->u.host;
+     int ret = -1;
+ 
+     if (!qemuIsSharedHostdev(hostdev))
+@@ -1418,6 +1420,19 @@ qemuAddSharedHostdev(virQEMUDriverPtr driver,
+     if (!(dev_path = qemuGetHostdevPath(hostdev)))
+         goto cleanup;
+ 
++    if ((ret = qemuCheckUnprivSGIO(driver->sharedDevices, dev_path,
++                                   scsisrc->sgio)) < 0) {
++        if (ret == -2) {
++            virReportError(VIR_ERR_OPERATION_INVALID,
++                           _("sgio of shared scsi host device '%s-%u-%u-%llu' "
++                             "conflicts with other active domains"),
++                           scsihostsrc->adapter, scsihostsrc->bus,
++                           scsihostsrc->target, scsihostsrc->unit);
++            ret = -1;
++        }
++        goto cleanup;
++    }
++
+     if (!(key = qemuGetSharedDeviceKey(dev_path)))
+         goto cleanup;
+ 
+-- 
+2.14.3
+

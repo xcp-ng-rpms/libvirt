@@ -1,0 +1,39 @@
+From 9d000db886030a45b1d8d016dd884db6b61419de Mon Sep 17 00:00:00 2001
+Message-Id: <9d000db886030a45b1d8d016dd884db6b61419de@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 13 Nov 2017 14:26:00 +0100
+Subject: [PATCH] Revert "virNetDevSupportBandwidth: Enable QoS for vhostuser"
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1497410
+
+This reverts commit bc8a99ef06417a2303ccab455f9f045e2a617916.
+
+The vhostuser is not a TAP. Therefore our QoS code is not able to
+set any bandwidth. I don't really understand what I was thinking.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 676768edeb28689c48f8fe9b6923003c1ed39584)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/netdev_bandwidth_conf.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/conf/netdev_bandwidth_conf.h b/src/conf/netdev_bandwidth_conf.h
+index c378280654..30f988953c 100644
+--- a/src/conf/netdev_bandwidth_conf.h
++++ b/src/conf/netdev_bandwidth_conf.h
+@@ -46,9 +46,9 @@ static inline bool virNetDevSupportBandwidth(virDomainNetType type)
+     case VIR_DOMAIN_NET_TYPE_NETWORK:
+     case VIR_DOMAIN_NET_TYPE_DIRECT:
+     case VIR_DOMAIN_NET_TYPE_ETHERNET:
+-    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+         return true;
+     case VIR_DOMAIN_NET_TYPE_USER:
++    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+-- 
+2.15.0
+

@@ -1,0 +1,47 @@
+From 5d839559bfdaf17dd1c550eb451c64fcac7079b3 Mon Sep 17 00:00:00 2001
+Message-Id: <5d839559bfdaf17dd1c550eb451c64fcac7079b3@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Thu, 9 Nov 2017 16:06:44 +0100
+Subject: [PATCH] qemu: Set alias for memory cell in
+ qemuBuildMemoryCellBackendStr
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1461214
+
+Very soon qemuBuildMemoryBackendStr() is going to use memory cell
+aliases. Therefore set one. At the same time, move it a bit
+further - if virAsprintf() fails, there's no point in setting
+rest of the members.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit d52e6043bc5b19484ce5489345f9b9be61d95c1c)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 9f346c3649..57c855c047 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -3542,12 +3542,13 @@ qemuBuildMemoryCellBackendStr(virDomainDefPtr def,
+     unsigned long long memsize = virDomainNumaGetNodeMemorySize(def->numa,
+                                                                 cell);
+ 
++    if (virAsprintf(&alias, "ram-node%zu", cell) < 0)
++        goto cleanup;
++
+     *backendStr = NULL;
+     mem.size = memsize;
+     mem.targetNode = cell;
+-
+-    if (virAsprintf(&alias, "ram-node%zu", cell) < 0)
+-        goto cleanup;
++    mem.info.alias = alias;
+ 
+     if ((rc = qemuBuildMemoryBackendStr(&props, &backendType, cfg, priv->qemuCaps,
+                                         def, &mem, priv->autoNodeset, false)) < 0)
+-- 
+2.15.0
+

@@ -1,0 +1,99 @@
+From ebf7011f8358288cccba7017fb5337e2d70fdc3b Mon Sep 17 00:00:00 2001
+Message-Id: <ebf7011f8358288cccba7017fb5337e2d70fdc3b@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 1 Dec 2017 15:57:00 +0100
+Subject: [PATCH] storage: Extract error reporting for broken chains
+
+Simplify reporting the error if backing chain is broken for further
+callers by extracting it into a separate function.
+
+(cherry picked from commit b4daf6af9adba96fc5e0bd68d49602a67639b053)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509110
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/storage/storage_source.c | 47 +++++++++++++++++++++++++++++++-------------
+ src/storage/storage_source.h |  4 ++++
+ 2 files changed, 37 insertions(+), 14 deletions(-)
+
+diff --git a/src/storage/storage_source.c b/src/storage/storage_source.c
+index 419fa3d43f..469d3a00bc 100644
+--- a/src/storage/storage_source.c
++++ b/src/storage/storage_source.c
+@@ -389,6 +389,38 @@ virStorageFileChown(const virStorageSource *src,
+ }
+ 
+ 
++/**
++ * virStorageFileReportBrokenChain:
++ *
++ * @errcode: errno when accessing @src
++ * @src: inaccessible file in the backing chain of @parent
++ * @parent: root virStorageSource being checked
++ *
++ * Reports the correct error message if @src is missing in the backing chain
++ * for @parent.
++ */
++void
++virStorageFileReportBrokenChain(int errcode,
++                                virStorageSourcePtr src,
++                                virStorageSourcePtr parent)
++{
++    unsigned int access_user = src->drv->uid;
++    unsigned int access_group = src->drv->gid;
++
++    if (src == parent) {
++        virReportSystemError(errcode,
++                             _("Cannot access storage file '%s' "
++                               "(as uid:%u, gid:%u)"),
++                             src->path, access_user, access_group);
++    } else {
++        virReportSystemError(errcode,
++                             _("Cannot access backing file '%s' "
++                               "of storage file '%s' (as uid:%u, gid:%u)"),
++                             src->path, parent->path, access_user, access_group);
++    }
++}
++
++
+ /* Recursive workhorse for virStorageFileGetMetadata.  */
+ static int
+ virStorageFileGetMetadataRecurse(virStorageSourcePtr src,
+@@ -418,20 +450,7 @@ virStorageFileGetMetadataRecurse(virStorageSourcePtr src,
+         return -1;
+ 
+     if (virStorageFileAccess(src, F_OK) < 0) {
+-        if (src == parent) {
+-            virReportSystemError(errno,
+-                                 _("Cannot access storage file '%s' "
+-                                   "(as uid:%u, gid:%u)"),
+-                                 src->path, (unsigned int)uid,
+-                                 (unsigned int)gid);
+-        } else {
+-            virReportSystemError(errno,
+-                                 _("Cannot access backing file '%s' "
+-                                   "of storage file '%s' (as uid:%u, gid:%u)"),
+-                                 src->path, parent->path,
+-                                 (unsigned int)uid, (unsigned int)gid);
+-        }
+-
++        virStorageFileReportBrokenChain(errno, src, parent);
+         goto cleanup;
+     }
+ 
+diff --git a/src/storage/storage_source.h b/src/storage/storage_source.h
+index 6462baf6ae..a20346a12c 100644
+--- a/src/storage/storage_source.h
++++ b/src/storage/storage_source.h
+@@ -51,4 +51,8 @@ int virStorageFileGetMetadata(virStorageSourcePtr src,
+ char *virStorageFileGetBackingStoreStr(virStorageSourcePtr src)
+     ATTRIBUTE_NONNULL(1);
+ 
++void virStorageFileReportBrokenChain(int errcode,
++                                     virStorageSourcePtr src,
++                                     virStorageSourcePtr parent);
++
+ #endif /* __VIR_STORAGE_SOURCE_H__ */
+-- 
+2.15.1
+

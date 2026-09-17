@@ -1,0 +1,90 @@
+From 5b5832decc253ce95535c9a6cf1eee6b5ed475fc Mon Sep 17 00:00:00 2001
+Message-Id: <5b5832decc253ce95535c9a6cf1eee6b5ed475fc@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:19 +0100
+Subject: [PATCH] qemu: Add QEMU_CAPS_DEVICE_PL011
+
+All serial devices shoule have an associated capability.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit a45ecb7bf6b43a863ef0980156e822d414975994)
+
+ Conflicts:
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv2.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv3.aarch64.xml
+
+	These caps do not exists in the current version.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                            | 4 ++++
+ src/qemu/qemu_capabilities.h                            | 3 +++
+ tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml | 1 +
+ tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml | 1 +
+ 4 files changed, 9 insertions(+)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 08c6653424..ae5448eaaa 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -453,6 +453,9 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "disk-share-rw",
+ 
+               "isa-serial",
++
++              /* 280 */
++              "pl011",
+     );
+ 
+ 
+@@ -1684,6 +1687,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "spapr-vty", QEMU_CAPS_DEVICE_SPAPR_VTY },
+     { "sclplmconsole", QEMU_CAPS_DEVICE_SCLPLMCONSOLE },
+     { "isa-serial", QEMU_CAPS_DEVICE_ISA_SERIAL },
++    { "pl011", QEMU_CAPS_DEVICE_PL011 },
+ };
+ 
+ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index f0bd88f897..c809f83404 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -440,6 +440,9 @@ typedef enum {
+ 
+     QEMU_CAPS_DEVICE_ISA_SERIAL, /* -device isa-serial */
+ 
++    /* 280 */
++    QEMU_CAPS_DEVICE_PL011, /* -device pl011 (not user-instantiable) */
++
+     QEMU_CAPS_LAST /* this must always be the last item */
+ } virQEMUCapsFlags;
+ 
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+index e699bdbafd..d3e2e18faa 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+@@ -173,6 +173,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='isa-serial'/>
++  <flag name='pl011'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+index f4c1de7e1d..bc86d03537 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+@@ -173,6 +173,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='isa-serial'/>
++  <flag name='pl011'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+-- 
+2.15.1
+

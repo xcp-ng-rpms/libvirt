@@ -1,0 +1,52 @@
+From b200b9cbb5c6c7d3d3b1bb4f745a7371cc35a429 Mon Sep 17 00:00:00 2001
+Message-Id: <b200b9cbb5c6c7d3d3b1bb4f745a7371cc35a429@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Wed, 13 Dec 2017 22:30:31 +0100
+Subject: [PATCH] cpu_x86: Rename virCPUx86MapInitialize
+
+The function will be used to initialize internal data of the x86 CPU
+driver (including the CPU map).
+
+CVE-2017-5715
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/cpu/cpu_x86.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/cpu/cpu_x86.c b/src/cpu/cpu_x86.c
+index a6cbd45766..693e571a3d 100644
+--- a/src/cpu/cpu_x86.c
++++ b/src/cpu/cpu_x86.c
+@@ -153,8 +153,8 @@ struct _virCPUx86Map {
+ };
+ 
+ static virCPUx86MapPtr cpuMap;
+-int virCPUx86MapOnceInit(void);
+-VIR_ONCE_GLOBAL_INIT(virCPUx86Map);
++int virCPUx86DriverOnceInit(void);
++VIR_ONCE_GLOBAL_INIT(virCPUx86Driver);
+ 
+ 
+ typedef enum {
+@@ -1404,7 +1404,7 @@ virCPUx86LoadMap(void)
+ 
+ 
+ int
+-virCPUx86MapOnceInit(void)
++virCPUx86DriverOnceInit(void)
+ {
+     if (!(cpuMap = virCPUx86LoadMap()))
+         return -1;
+@@ -1416,7 +1416,7 @@ virCPUx86MapOnceInit(void)
+ static virCPUx86MapPtr
+ virCPUx86GetMap(void)
+ {
+-    if (virCPUx86MapInitialize() < 0)
++    if (virCPUx86DriverInitialize() < 0)
+         return NULL;
+ 
+     return cpuMap;
+-- 
+2.15.1
+

@@ -1,0 +1,108 @@
+From 6fe46c6d8b1bfdd1f5d3e54798077e1db5b4180c Mon Sep 17 00:00:00 2001
+Message-Id: <6fe46c6d8b1bfdd1f5d3e54798077e1db5b4180c@dist-git>
+From: Pino Toscano <ptoscano@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:16 +0100
+Subject: [PATCH] qemu: switch s390/s390x default console back to serial
+
+Now that <serial> and <console> on s390/s390x behave a bit more like the
+other architectures, remove this extra differentation, and use sclp
+console by default for new guests.  New virtio consoles can still be
+added, and it is actually needed because of the limited number of
+instances for sclp and sclplm.
+
+This reverts commit b1c88c14764e0b043a269d454a83a6ac7af34eac, whose
+reasons are not totally clear.
+
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Bjoern Walk <bwalk@linux.vnet.ibm.com>
+(cherry picked from commit 220c1f70dc96b1066cefbfe50f30e3111a2ecdc6)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c                                          | 7 -------
+ tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args    | 5 +----
+ tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-defaultconsole.xml | 8 ++++++--
+ tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml | 6 ------
+ 4 files changed, 7 insertions(+), 19 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 91c0e163e1..1b5f439621 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -4255,13 +4255,6 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+                           virQEMUDriverPtr driver,
+                           unsigned int parseFlags)
+ {
+-    /* set the default console type for S390 arches */
+-    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
+-        chr->targetType == VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_NONE &&
+-        ARCH_IS_S390(def->os.arch)) {
+-        chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_VIRTIO;
+-    }
+-
+     /* Historically, isa-serial and the default matched, so in order to
+      * maintain backwards compatibility we map them here. The actual default
+      * will be picked below based on the architecture and machine type. */
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
+index c405fb59ee..20968f7945 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-s390-serial-console.args
+@@ -18,8 +18,5 @@ QEMU_AUDIO_DRV=none \
+ server,nowait \
+ -mon chardev=charmonitor,id=monitor,mode=readline \
+ -boot c \
+--device virtio-serial-ccw,id=virtio-serial0,devno=fe.0.0000 \
+ -chardev pty,id=charserial0 \
+--device sclpconsole,chardev=charserial0,id=serial0 \
+--chardev pty,id=charconsole1 \
+--device virtconsole,chardev=charconsole1,id=console1
++-device sclpconsole,chardev=charserial0,id=serial0
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-defaultconsole.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-defaultconsole.xml
+index 7eb1a765ab..0f278f2c9d 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-defaultconsole.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-defaultconsole.xml
+@@ -14,9 +14,13 @@
+   <on_crash>destroy</on_crash>
+   <devices>
+     <emulator>/usr/bin/qemu-system-s390x</emulator>
+-    <controller type='virtio-serial' index='0'/>
++    <serial type='pty'>
++      <target type='sclp-serial' port='0'>
++        <model name='sclpconsole'/>
++      </target>
++    </serial>
+     <console type='pty'>
+-      <target type='virtio' port='0'/>
++      <target type='serial' port='0'/>
+     </console>
+     <memballoon model='none'/>
+     <panic model='s390'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
+index db3023b7a6..9c9b4dd27a 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-s390-serial-console.xml
+@@ -14,9 +14,6 @@
+   <on_crash>destroy</on_crash>
+   <devices>
+     <emulator>/usr/bin/qemu-system-s390x</emulator>
+-    <controller type='virtio-serial' index='0'>
+-      <address type='ccw' cssid='0xfe' ssid='0x0' devno='0x0000'/>
+-    </controller>
+     <serial type='pty'>
+       <target type='sclp-serial' port='0'>
+         <model name='sclpconsole'/>
+@@ -25,9 +22,6 @@
+     <console type='pty'>
+       <target type='serial' port='0'/>
+     </console>
+-    <console type='pty'>
+-      <target type='virtio' port='0'/>
+-    </console>
+     <memballoon model='none'/>
+     <panic model='s390'/>
+   </devices>
+-- 
+2.15.1
+

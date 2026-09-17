@@ -1,0 +1,48 @@
+From f40e3d33b65bcdba7f0199082c4de8d8109a5e0d Mon Sep 17 00:00:00 2001
+Message-Id: <f40e3d33b65bcdba7f0199082c4de8d8109a5e0d@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:19 +0100
+Subject: [PATCH] tests: Remove executable bits on plain data files
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 02e822e0414eb2c01984c03dbfd79f1e2da528b3)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/cbm_mask     | 0
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/min_cbm_bits | 0
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/num_closids  | 0
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/cbm_mask     | 0
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/min_cbm_bits | 0
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/num_closids  | 0
+ 6 files changed, 0 insertions(+), 0 deletions(-)
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/cbm_mask
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/min_cbm_bits
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/num_closids
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/cbm_mask
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/min_cbm_bits
+ mode change 100755 => 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/num_closids
+
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/cbm_mask b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/cbm_mask
+old mode 100755
+new mode 100644
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/min_cbm_bits b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/min_cbm_bits
+old mode 100755
+new mode 100644
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/num_closids b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3CODE/num_closids
+old mode 100755
+new mode 100644
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/cbm_mask b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/cbm_mask
+old mode 100755
+new mode 100644
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/min_cbm_bits b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/min_cbm_bits
+old mode 100755
+new mode 100644
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/num_closids b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/info/L3DATA/num_closids
+old mode 100755
+new mode 100644
+-- 
+2.16.1
+

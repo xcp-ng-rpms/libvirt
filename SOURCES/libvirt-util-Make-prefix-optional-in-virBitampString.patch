@@ -1,0 +1,84 @@
+From c5355b3f4b45e1a0a432ba7ee420649ef5c4c4a5 Mon Sep 17 00:00:00 2001
+Message-Id: <c5355b3f4b45e1a0a432ba7ee420649ef5c4c4a5@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:10 +0100
+Subject: [PATCH] util: Make prefix optional in virBitampString
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit d127aced0a694b8158074e167c8c1db03bbc2df1)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 4 ++--
+ src/util/virbitmap.c         | 8 ++++++--
+ src/util/virbitmap.h         | 2 +-
+ 3 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index bd80edc978..d6bd28d072 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -1525,7 +1525,7 @@ int virQEMUCapsParseHelpStr(const char *qemu,
+                                    qemuCaps, check_yajl) < 0)
+         goto cleanup;
+ 
+-    strflags = virBitmapString(qemuCaps->flags);
++    strflags = virBitmapString(qemuCaps->flags, true);
+     VIR_DEBUG("Version %u.%u.%u, cooked version %u, flags %s",
+               major, minor, micro, *version, NULLSTR(strflags));
+     VIR_FREE(strflags);
+@@ -2407,7 +2407,7 @@ virQEMUCapsClear(virQEMUCapsPtr qemuCaps,
+ 
+ char *virQEMUCapsFlagsString(virQEMUCapsPtr qemuCaps)
+ {
+-    return virBitmapString(qemuCaps->flags);
++    return virBitmapString(qemuCaps->flags, true);
+ }
+ 
+ 
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index 57a8fbf82c..f08384ff1c 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -312,17 +312,21 @@ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+ /**
+  * virBitmapString:
+  * @bitmap: Pointer to bitmap
++ * @prefix: Whether to prepend "0x"
+  *
+  * Convert @bitmap to printable string.
+  *
+  * Returns pointer to the string or NULL on error.
+  */
+-char *virBitmapString(virBitmapPtr bitmap)
++char *
++virBitmapString(virBitmapPtr bitmap,
++                bool prefix)
+ {
+     virBuffer buf = VIR_BUFFER_INITIALIZER;
+     size_t sz;
+ 
+-    virBufferAddLit(&buf, "0x");
++    if (prefix)
++        virBufferAddLit(&buf, "0x");
+ 
+     sz = bitmap->map_len;
+ 
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index ffa3c42d79..dc8fb71a07 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -80,7 +80,7 @@ bool virBitmapIsBitSet(virBitmapPtr bitmap, size_t b)
+ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+ 
+-char *virBitmapString(virBitmapPtr bitmap)
++char *virBitmapString(virBitmapPtr bitmap, bool prefix)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
+ 
+ char *virBitmapFormat(virBitmapPtr bitmap);
+-- 
+2.16.1
+

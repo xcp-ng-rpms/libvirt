@@ -1,0 +1,139 @@
+From cfbc47467f2174875f63493458a2f350ec21b65d Mon Sep 17 00:00:00 2001
+Message-Id: <cfbc47467f2174875f63493458a2f350ec21b65d@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:15 +0100
+Subject: [PATCH] util: Reintroduce virBitmapSubtract
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Already introduced in the past with 9479642fd3c5, but then renamed to
+virBitmapIntersect by a908e9e45eb2.  This time we'll really use it.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 449442c34d20753ca57852d9d7957dd7ba868fae)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virbitmap.c     | 22 ++++++++++++++++++++++
+ src/util/virbitmap.h     |  3 +++
+ tests/virbitmaptest.c    | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 68 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 1d895a3bf6..8cc8cbcc90 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1383,6 +1383,7 @@ virBitmapSetAll;
+ virBitmapSetBit;
+ virBitmapSetBitExpand;
+ virBitmapSize;
++virBitmapSubtract;
+ virBitmapToData;
+ virBitmapToDataBuf;
+ virBitmapToString;
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index 47d16ee222..7338f0255a 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -1174,3 +1174,25 @@ virBitmapIntersect(virBitmapPtr a,
+     for (i = 0; i < max; i++)
+         a->map[i] &= b->map[i];
+ }
++
++
++/**
++ * virBitmapSubtract:
++ * @a: minuend/result
++ * @b: subtrahend
++ *
++ * Performs subtraction of two bitmaps: a = a - b
++ */
++void
++virBitmapSubtract(virBitmapPtr a,
++                  virBitmapPtr b)
++{
++    size_t i;
++    size_t max = a->map_len;
++
++    if (max > b->map_len)
++        max = b->map_len;
++
++    for (i = 0; i < max; i++)
++        a->map[i] &= ~b->map[i];
++}
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index e964a3edc9..7b2bea8b53 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -150,4 +150,7 @@ bool virBitmapOverlaps(virBitmapPtr b1,
+ void virBitmapIntersect(virBitmapPtr a, virBitmapPtr b)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+ 
++void virBitmapSubtract(virBitmapPtr a, virBitmapPtr b)
++    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
++
+ #endif
+diff --git a/tests/virbitmaptest.c b/tests/virbitmaptest.c
+index 9daa8316f3..5bf30b2b1c 100644
+--- a/tests/virbitmaptest.c
++++ b/tests/virbitmaptest.c
+@@ -701,6 +701,39 @@ test13(const void *opaque ATTRIBUTE_UNUSED)
+ 
+ #undef TEST_MAP
+ 
++static int
++test14(const void *opaque)
++{
++    const struct testBinaryOpData *data = opaque;
++    virBitmapPtr amap = NULL;
++    virBitmapPtr bmap = NULL;
++    virBitmapPtr resmap = NULL;
++    int ret = -1;
++
++    if (virBitmapParse(data->a, &amap, 256) < 0 ||
++        virBitmapParse(data->b, &bmap, 256) < 0 ||
++        virBitmapParse(data->res, &resmap, 256) < 0)
++        goto cleanup;
++
++    virBitmapSubtract(amap, bmap);
++
++    if (!virBitmapEqual(amap, resmap)) {
++        fprintf(stderr,
++                "\n bitmap subtraction failed: '%s' - '%s' != '%s'\n",
++                data->a, data->b, data->res);
++        goto cleanup;
++    }
++
++    ret = 0;
++
++ cleanup:
++    virBitmapFree(amap);
++    virBitmapFree(bmap);
++    virBitmapFree(resmap);
++
++    return ret;
++}
++
+ 
+ #define TESTBINARYOP(A, B, RES, FUNC)                                         \
+     testBinaryOpData.a = A;                                                   \
+@@ -750,6 +783,15 @@ mymain(void)
+     if (virTestRun("test13", test13, NULL) < 0)
+         ret = -1;
+ 
++    virTestCounterReset("test14-");
++    TESTBINARYOP("0", "0", "0,^0", test14);
++    TESTBINARYOP("0-3", "0", "1-3", test14);
++    TESTBINARYOP("0-3", "0,3", "1-2", test14);
++    TESTBINARYOP("0,^0", "0", "0,^0", test14);
++    TESTBINARYOP("0-3", "0-3", "0,^0", test14);
++    TESTBINARYOP("0-3", "0,^0", "0-3", test14);
++    TESTBINARYOP("0,2", "1,3", "0,2", test14);
++
+     return ret;
+ }
+ 
+-- 
+2.16.1
+

@@ -1,0 +1,47 @@
+From 38b3d773dddd7f3cfe715b9cbabaa296c16c1290 Mon Sep 17 00:00:00 2001
+Message-Id: <38b3d773dddd7f3cfe715b9cbabaa296c16c1290@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Fri, 5 Jan 2018 17:43:03 +0100
+Subject: [PATCH] cpu_x86: Copy CPU signature from ancestor
+
+When specifying a new CPU model in cpu_map.xml as an extension to an
+existing model, we forgot to copy the signature (family + model) from
+the original CPU model.
+
+We don't use this way of specifying CPU models, but it's still supported
+and it becomes useful when someone wants to quickly hack up a CPU model
+for testing or when creating additional variants of existing models to
+help with fixing some spectral issues.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit b427cf4831d0ea7aac9dd1a3aa7682478356a483)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1533125
+
+The new -IBRS and -IBPB CPU models were defined via inheritance from
+their original models in RHEL. Thus when the host CPU matches the
+signature of the original model from cpu_map.xml, libvirt will detect
+the host CPU as the original model + the new feature rather than
+reporting it as the -IBRS/-IBPB variant.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/cpu/cpu_x86.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/cpu/cpu_x86.c b/src/cpu/cpu_x86.c
+index ad35532fc1..001109f701 100644
+--- a/src/cpu/cpu_x86.c
++++ b/src/cpu/cpu_x86.c
+@@ -1227,6 +1227,7 @@ x86ModelParse(xmlXPathContextPtr ctxt,
+         VIR_FREE(name);
+ 
+         model->vendor = ancestor->vendor;
++        model->signature = ancestor->signature;
+         if (x86DataCopy(&model->data, &ancestor->data) < 0)
+             goto error;
+     }
+-- 
+2.15.1
+

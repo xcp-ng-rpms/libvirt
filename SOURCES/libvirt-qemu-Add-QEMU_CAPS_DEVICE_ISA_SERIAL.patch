@@ -1,0 +1,361 @@
+From 62fe4cb859c0e86460879bcf676f1107ccd93129 Mon Sep 17 00:00:00 2001
+Message-Id: <62fe4cb859c0e86460879bcf676f1107ccd93129@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:17 +0100
+Subject: [PATCH] qemu: Add QEMU_CAPS_DEVICE_ISA_SERIAL
+
+All serial devices shoule have an associated capability.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit b0f1c291a0d3cbf2881a308a39f3f390f1cabcf5)
+
+ Conflicts:
+	src/qemu/qemu_capabilities.c
+	src/qemu/qemu_capabilities.h
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv2.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv3.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+	tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+	tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
+
+	Insert the new capability in the right place, both in the
+	declaration and in the caps.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                            | 3 +++
+ src/qemu/qemu_capabilities.h                            | 2 ++
+ tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml       | 1 +
+ tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml | 1 +
+ tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml | 1 +
+ tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml         | 1 +
+ tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml        | 1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml         | 1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml        | 1 +
+ tests/qemuhelptest.c                                    | 5 +++++
+ 22 files changed, 29 insertions(+)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 322e0423d6..08c6653424 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -451,6 +451,8 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "sclplmconsole",
+ 
+               "disk-share-rw",
++
++              "isa-serial",
+     );
+ 
+ 
+@@ -1681,6 +1683,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "spapr-pci-host-bridge", QEMU_CAPS_DEVICE_SPAPR_PCI_HOST_BRIDGE },
+     { "spapr-vty", QEMU_CAPS_DEVICE_SPAPR_VTY },
+     { "sclplmconsole", QEMU_CAPS_DEVICE_SCLPLMCONSOLE },
++    { "isa-serial", QEMU_CAPS_DEVICE_ISA_SERIAL },
+ };
+ 
+ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index c3a15948cf..f0bd88f897 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -438,6 +438,8 @@ typedef enum {
+ 
+     QEMU_CAPS_DISK_SHARE_RW, /* share-rw=on for concurrent disk access */
+ 
++    QEMU_CAPS_DEVICE_ISA_SERIAL, /* -device isa-serial */
++
+     QEMU_CAPS_LAST /* this must always be the last item */
+ } virQEMUCapsFlags;
+ 
+diff --git a/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
+index 956284d5d3..d560811ab7 100644
+--- a/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
+@@ -109,6 +109,7 @@
+   <flag name='device-tray-moved-event'/>
+   <flag name='display'/>
+   <flag name='query-cpu-definitions'/>
++  <flag name='isa-serial'/>
+   <version>1002002</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
+index 99384ce5e6..576475f7fa 100644
+--- a/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
+@@ -127,6 +127,7 @@
+   <flag name='nec-usb-xhci-ports'/>
+   <flag name='display'/>
+   <flag name='query-cpu-definitions'/>
++  <flag name='isa-serial'/>
+   <version>1003001</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
+index aea043c57d..0c271d3e41 100644
+--- a/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
+@@ -128,6 +128,7 @@
+   <flag name='nec-usb-xhci-ports'/>
+   <flag name='display'/>
+   <flag name='query-cpu-definitions'/>
++  <flag name='isa-serial'/>
+   <version>1004002</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
+index 6f860e4f25..5c667975bf 100644
+--- a/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
+@@ -140,6 +140,7 @@
+   <flag name='vhost-scsi'/>
+   <flag name='query-cpu-definitions'/>
+   <flag name='kernel-irqchip'/>
++  <flag name='isa-serial'/>
+   <version>1005003</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
+index e5dc8360de..8ae07a91db 100644
+--- a/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
+@@ -145,6 +145,7 @@
+   <flag name='vhost-scsi'/>
+   <flag name='query-cpu-definitions'/>
+   <flag name='kernel-irqchip'/>
++  <flag name='isa-serial'/>
+   <version>1006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
+index 86d87eaf0c..34bd6be1cd 100644
+--- a/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
+@@ -147,6 +147,7 @@
+   <flag name='vhost-scsi'/>
+   <flag name='query-cpu-definitions'/>
+   <flag name='kernel-irqchip'/>
++  <flag name='isa-serial'/>
+   <version>1007000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
+index 2fa551b1a0..0d7c144ff7 100644
+--- a/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
+@@ -163,6 +163,7 @@
+   <flag name='query-cpu-definitions'/>
+   <flag name='query-named-block-nodes'/>
+   <flag name='kernel-irqchip'/>
++  <flag name='isa-serial'/>
+   <version>2001001</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+index c95025b41f..23356f4092 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+@@ -180,6 +180,7 @@
+   <flag name='machine.pseries.resize-hpt'/>
+   <flag name='spapr-vty'/>
+   <flag name='disk-share-rw'/>
++  <flag name='isa-serial'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.10.0)</package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+index 33db3e6674..e04e530b95 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+@@ -225,6 +225,7 @@
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='disk-share-rw'/>
++  <flag name='isa-serial'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.10.0)</package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
+index f97e4cb813..5007523c1f 100644
+--- a/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
+@@ -188,6 +188,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='isa-serial'/>
+   <version>2004000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
+index 2ba40fc494..a9ad292d01 100644
+--- a/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
+@@ -194,6 +194,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='isa-serial'/>
+   <version>2005000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+index 0b34fa30d4..e699bdbafd 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+@@ -172,6 +172,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+index d41d578c7e..f4c1de7e1d 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+@@ -172,6 +172,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+index 5ff8598fc8..27d99bd937 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+@@ -168,6 +168,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='spapr-vty'/>
++  <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
+index bdf006f6be..97621612ab 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
+@@ -204,6 +204,7 @@
+   <flag name='vnc-multi-servers'/>
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
++  <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
+   <package></package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
+index 59adff6c97..e4ea9452c5 100644
+--- a/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
+@@ -208,6 +208,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='isa-serial'/>
+   <version>2007000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.7.0)</package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
+index 3165b2dee3..c6d3e21d5c 100644
+--- a/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
+@@ -210,6 +210,7 @@
+   <flag name='chardev-reconnect'/>
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='isa-serial'/>
+   <version>2008000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.8.0)</package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+index 3b70b1a407..f5cf0ba932 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+@@ -175,6 +175,7 @@
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='spapr-vty'/>
+   <flag name='disk-share-rw'/>
++  <flag name='isa-serial'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.9.0)</package>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
+index 0ea9a2fce3..82cc4e79f4 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
+@@ -222,6 +222,7 @@
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='disk-share-rw'/>
++  <flag name='isa-serial'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.9.0)</package>
+diff --git a/tests/qemuhelptest.c b/tests/qemuhelptest.c
+index 1a6e7092fd..0e05aa9d8a 100644
+--- a/tests/qemuhelptest.c
++++ b/tests/qemuhelptest.c
+@@ -174,6 +174,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_USB_KBD,
+             QEMU_CAPS_DEVICE_RTL8139,
+             QEMU_CAPS_DEVICE_E1000,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DEVICE_VIRTIO_NET);
+     DO_TEST("qemu-kvm-0.12.3", 12003, 1, 0,
+             QEMU_CAPS_DRIVE_BOOT,
+@@ -210,6 +211,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_USB_KBD,
+             QEMU_CAPS_DEVICE_RTL8139,
+             QEMU_CAPS_DEVICE_E1000,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DEVICE_VIRTIO_NET);
+     DO_TEST("qemu-kvm-0.13.0", 13000, 1, 0,
+             QEMU_CAPS_DRIVE_BOOT,
+@@ -258,6 +260,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_IVSHMEM,
+             QEMU_CAPS_DEVICE_RTL8139,
+             QEMU_CAPS_DEVICE_E1000,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DEVICE_VIRTIO_NET);
+     DO_TEST("qemu-1.0", 1000000, 0, 0,
+             QEMU_CAPS_DRIVE_CACHE_UNSAFE,
+@@ -328,6 +331,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_RTL8139,
+             QEMU_CAPS_DEVICE_E1000,
+             QEMU_CAPS_DEVICE_VIRTIO_NET,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DISPLAY);
+     DO_TEST("qemu-1.1.0", 1001000, 0, 0,
+             QEMU_CAPS_DRIVE_CACHE_UNSAFE,
+@@ -411,6 +415,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_RTL8139,
+             QEMU_CAPS_DEVICE_E1000,
+             QEMU_CAPS_DEVICE_VIRTIO_NET,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DISPLAY);
+     DO_TEST_FULL("qemu-1.2.0", 1002000, 0, 0, VIR_ERR_CONFIG_UNSUPPORTED,
+             QEMU_CAPS_LAST);
+-- 
+2.15.1
+

@@ -1,0 +1,193 @@
+From 5965fa7d3b6a473b47457f9a21ce0229c3d7464b Mon Sep 17 00:00:00 2001
+Message-Id: <5965fa7d3b6a473b47457f9a21ce0229c3d7464b@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:27 +0100
+Subject: [PATCH] util: Remove now-unneeded resctrl functions
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 6328e48713c0730797d82a03d154a00b62625c3a)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |   2 -
+ src/util/virresctrl.c    | 132 -----------------------------------------------
+ src/util/virresctrl.h    |  11 ----
+ 3 files changed, 145 deletions(-)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index e0e0046522..02bad6c0ce 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -2547,8 +2547,6 @@ virRandomInt;
+ # util/virresctrl.h
+ virCacheTypeFromString;
+ virCacheTypeToString;
+-virResctrlGetCacheControlType;
+-virResctrlGetCacheInfo;
+ virResctrlGetInfo;
+ virResctrlInfoGetCache;
+ virResctrlInfoNew;
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 7ab68c6f74..f122af2050 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -358,135 +358,3 @@ virResctrlInfoGetCache(virResctrlInfoPtr resctrl,
+     VIR_FREE(*controls);
+     goto cleanup;
+ }
+-
+-
+-int
+-virResctrlGetCacheInfo(unsigned int level,
+-                       unsigned long long size,
+-                       virCacheType scope,
+-                       virResctrlInfoPerCachePtr **controls,
+-                       size_t *ncontrols)
+-{
+-    int ret = -1;
+-    char *tmp = NULL;
+-    char *path = NULL;
+-    char *cbm_mask = NULL;
+-    char *type_upper = NULL;
+-    unsigned int bits = 0;
+-    unsigned int min_cbm_bits = 0;
+-    virResctrlInfoPerCachePtr control;
+-
+-    if (VIR_ALLOC(control) < 0)
+-        goto cleanup;
+-
+-    if (scope != VIR_CACHE_TYPE_BOTH &&
+-        virStringToUpper(&type_upper, virCacheTypeToString(scope)) < 0)
+-        goto cleanup;
+-
+-    if (virFileReadValueUint(&control->max_allocation,
+-                             SYSFS_RESCTRL_PATH "/info/L%u%s/num_closids",
+-                             level,
+-                             type_upper ? type_upper : "") < 0)
+-        goto cleanup;
+-
+-    if (virFileReadValueString(&cbm_mask,
+-                               SYSFS_RESCTRL_PATH
+-                               "/info/L%u%s/cbm_mask",
+-                               level,
+-                               type_upper ? type_upper: "") < 0)
+-        goto cleanup;
+-
+-    if (virFileReadValueUint(&min_cbm_bits,
+-                             SYSFS_RESCTRL_PATH "/info/L%u%s/min_cbm_bits",
+-                             level,
+-                             type_upper ? type_upper : "") < 0)
+-        goto cleanup;
+-
+-    virStringTrimOptionalNewline(cbm_mask);
+-
+-    for (tmp = cbm_mask; *tmp != '\0'; tmp++) {
+-        if (c_isxdigit(*tmp))
+-            bits += count_one_bits(virHexToBin(*tmp));
+-    }
+-
+-    control->granularity = size / bits;
+-    if (min_cbm_bits != 1)
+-        control->min = min_cbm_bits * control->granularity;
+-
+-    control->scope = scope;
+-
+-    if (VIR_APPEND_ELEMENT(*controls, *ncontrols, control) < 0)
+-        goto cleanup;
+-
+-    ret = 0;
+-
+- cleanup:
+-    VIR_FREE(path);
+-    VIR_FREE(cbm_mask);
+-    VIR_FREE(type_upper);
+-    VIR_FREE(control);
+-    return ret;
+-}
+-
+-
+-static inline int
+-virResctrlGetCacheDir(char **path,
+-                      const char *prefix,
+-                      unsigned int level,
+-                      virCacheType type)
+-{
+-    return virAsprintf(path,
+-                       SYSFS_RESCTRL_PATH "%s/L%u%s",
+-                       prefix ? prefix : "",
+-                       level,
+-                       virResctrlTypeToString(type));
+-}
+-
+-
+-/*
+- * This function tests whether TYPE of cache control is supported or not.
+- *
+- * Returns 0 if not, 1 if yes and negative value on error.
+- */
+-static int
+-virResctrlGetCacheSupport(unsigned int level, virCacheType type)
+-{
+-    int ret = -1;
+-    char *path = NULL;
+-
+-    if (virResctrlGetCacheDir(&path, "/info", level, type) < 0)
+-        return -1;
+-
+-    ret = virFileExists(path);
+-    VIR_FREE(path);
+-    return ret;
+-}
+-
+-
+-/*
+- * This function tests which TYPE of cache control is supported
+- * Return values are:
+- *  -1: error
+- *   0: none
+- *   1: CAT
+- *   2: CDP
+- */
+-int
+-virResctrlGetCacheControlType(unsigned int level)
+-{
+-    int rv = -1;
+-
+-    rv = virResctrlGetCacheSupport(level, VIR_CACHE_TYPE_BOTH);
+-    if (rv < 0)
+-        return -1;
+-    if (rv)
+-        return 1;
+-
+-    rv = virResctrlGetCacheSupport(level, VIR_CACHE_TYPE_CODE);
+-    if (rv < 0)
+-        return -1;
+-    if (rv)
+-        return 2;
+-
+-    return 0;
+-}
+diff --git a/src/util/virresctrl.h b/src/util/virresctrl.h
+index c7f25c76e1..a81ff687de 100644
+--- a/src/util/virresctrl.h
++++ b/src/util/virresctrl.h
+@@ -65,15 +65,4 @@ virResctrlInfoGetCache(virResctrlInfoPtr resctrl,
+                        size_t *ncontrols,
+                        virResctrlInfoPerCachePtr **controls);
+ 
+-/* To be removed */
+-int
+-virResctrlGetCacheInfo(unsigned int level,
+-                       unsigned long long size,
+-                       virCacheType scope,
+-                       virResctrlInfoPerCachePtr **controls,
+-                       size_t *ncontrols);
+-
+-int
+-virResctrlGetCacheControlType(unsigned int level);
+-
+ #endif /*  __VIR_RESCTRL_H__ */
+-- 
+2.16.1
+

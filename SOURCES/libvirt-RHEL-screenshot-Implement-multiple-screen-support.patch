@@ -1,0 +1,179 @@
+From e326d80a0b1ff2606e16e6fabea8a1914a5cd1d2 Mon Sep 17 00:00:00 2001
+Message-Id: <e326d80a0b1ff2606e16e6fabea8a1914a5cd1d2@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 26 Aug 2011 16:41:17 +0800
+Subject: [PATCH] RHEL: screenshot: Implement multiple screen support
+
+For https://bugzilla.redhat.com/show_bug.cgi?id=1026966
+    https://bugzilla.redhat.com/show_bug.cgi?id=710489
+RHEL only, requires __com.redhat_qxl_screendump
+
+As RHEL qemu supports taking screenshot of other monitors than the
+first one, we can allow libvirt to support this feature too.
+
+Although this command allows screen specification via ID, there is
+not a way to assign one to the primary monitor. Therefore, we must
+stick to upstream command in case of primary monitor, and use this
+new command in other cases.
+
+(cherry picked from commit 800c9b2c1e0347585213ba6895db7cf064cda21c in
+rhel-6.5 branch)
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+
+Conflicts:
+	src/qemu/qemu_driver.c - context
+	src/qemu/qemu_monitor.c - don't return -1 without reporting an
+	    error
+---
+ src/qemu/qemu_driver.c       | 22 +++++++++++++++-------
+ src/qemu/qemu_monitor.c      | 14 ++++++++++++--
+ src/qemu/qemu_monitor.h      |  3 ++-
+ src/qemu/qemu_monitor_json.c | 24 ++++++++++++++++++++++++
+ src/qemu/qemu_monitor_json.h |  4 ++++
+ 5 files changed, 57 insertions(+), 10 deletions(-)
+
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index 1dff53441b..82c60e6ef1 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -3999,6 +3999,8 @@ qemuDomainScreenshot(virDomainPtr dom,
+     char *ret = NULL;
+     bool unlink_tmp = false;
+     virQEMUDriverConfigPtr cfg = NULL;
++    int video_index = 0;
++    const char *video_id = NULL;
+ 
+     virCheckFlags(0, NULL);
+ 
+@@ -4020,12 +4022,15 @@ qemuDomainScreenshot(virDomainPtr dom,
+         goto endjob;
+     }
+ 
+-    /* Well, even if qemu allows multiple graphic cards, heads, whatever,
+-     * screenshot command does not */
+-    if (screen) {
+-        virReportError(VIR_ERR_INVALID_ARG,
+-                       "%s", _("currently is supported only taking "
+-                               "screenshots of screen ID 0"));
++    while (video_index < vm->def->nvideos) {
++        if (screen < vm->def->videos[video_index]->heads)
++            break;
++        screen -= vm->def->videos[video_index]->heads;
++        video_index++;
++    }
++
++    if (video_index == vm->def->nvideos) {
++        virReportError(VIR_ERR_INVALID_ARG, "%s", _("no such screen"));
+         goto endjob;
+     }
+ 
+@@ -4040,8 +4045,11 @@ qemuDomainScreenshot(virDomainPtr dom,
+ 
+     qemuSecuritySetSavedStateLabel(driver->securityManager, vm->def, tmp);
+ 
++    if (video_index)
++        video_id = vm->def->videos[video_index]->info.alias;
++
+     qemuDomainObjEnterMonitor(driver, vm);
+-    if (qemuMonitorScreendump(priv->mon, tmp) < 0) {
++    if (qemuMonitorScreendump(priv->mon, tmp, video_id) < 0) {
+         ignore_value(qemuDomainObjExitMonitor(driver, vm));
+         goto endjob;
+     }
+diff --git a/src/qemu/qemu_monitor.c b/src/qemu/qemu_monitor.c
+index dd9d64a207..3cf23db874 100644
+--- a/src/qemu/qemu_monitor.c
++++ b/src/qemu/qemu_monitor.c
+@@ -3461,12 +3461,22 @@ qemuMonitorSendKey(qemuMonitorPtr mon,
+ 
+ int
+ qemuMonitorScreendump(qemuMonitorPtr mon,
+-                      const char *file)
++                      const char *file,
++                      const char *id)
+ {
+-    VIR_DEBUG("file=%s", file);
++    VIR_DEBUG("file=%s, id=%s", file, id);
+ 
+     QEMU_CHECK_MONITOR(mon);
+ 
++    if (id) {
++        if (!mon->json) {
++            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
++                           _("non-zero screen ID requires JSON monitor"));
++            return -1;
++        }
++        return qemuMonitorJSONScreendumpRH(mon, file, id);
++    }
++
+     if (mon->json)
+         return qemuMonitorJSONScreendump(mon, file);
+     else
+diff --git a/src/qemu/qemu_monitor.h b/src/qemu/qemu_monitor.h
+index bc8494faee..7e20e96116 100644
+--- a/src/qemu/qemu_monitor.h
++++ b/src/qemu/qemu_monitor.h
+@@ -888,7 +888,8 @@ int qemuMonitorArbitraryCommand(qemuMonitorPtr mon,
+ int qemuMonitorInjectNMI(qemuMonitorPtr mon);
+ 
+ int qemuMonitorScreendump(qemuMonitorPtr mon,
+-                          const char *file);
++                          const char *file,
++                          const char *id);
+ 
+ int qemuMonitorSendKey(qemuMonitorPtr mon,
+                        unsigned int holdtime,
+diff --git a/src/qemu/qemu_monitor_json.c b/src/qemu/qemu_monitor_json.c
+index 05cc634d20..8a75e0ef7e 100644
+--- a/src/qemu/qemu_monitor_json.c
++++ b/src/qemu/qemu_monitor_json.c
+@@ -4294,6 +4294,30 @@ int qemuMonitorJSONSendKey(qemuMonitorPtr mon,
+     return ret;
+ }
+ 
++int qemuMonitorJSONScreendumpRH(qemuMonitorPtr mon,
++                                const char *file,
++                                const char *id)
++{
++    int ret = -1;
++    virJSONValuePtr cmd, reply = NULL;
++
++    cmd = qemuMonitorJSONMakeCommand("__com.redhat_qxl_screendump",
++                                     "s:filename", file,
++                                     "s:id", id,
++                                     NULL);
++    if (!cmd)
++        return -1;
++
++    ret = qemuMonitorJSONCommand(mon, cmd, &reply);
++
++    if (ret == 0)
++        ret = qemuMonitorJSONCheckError(cmd, reply);
++
++    virJSONValueFree(cmd);
++    virJSONValueFree(reply);
++    return ret;
++}
++
+ int qemuMonitorJSONScreendump(qemuMonitorPtr mon,
+                               const char *file)
+ {
+diff --git a/src/qemu/qemu_monitor_json.h b/src/qemu/qemu_monitor_json.h
+index 739a99293c..02a504ab85 100644
+--- a/src/qemu/qemu_monitor_json.h
++++ b/src/qemu/qemu_monitor_json.h
+@@ -292,6 +292,10 @@ int qemuMonitorJSONSendKey(qemuMonitorPtr mon,
+                            unsigned int *keycodes,
+                            unsigned int nkeycodes);
+ 
++int qemuMonitorJSONScreendumpRH(qemuMonitorPtr mon,
++                                const char *file,
++                                const char *id);
++
+ int qemuMonitorJSONScreendump(qemuMonitorPtr mon,
+                               const char *file);
+ 
+-- 
+2.14.3
+

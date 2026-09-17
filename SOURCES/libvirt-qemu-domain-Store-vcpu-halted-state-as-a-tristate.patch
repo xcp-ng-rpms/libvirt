@@ -1,0 +1,96 @@
+From d75ea91fe4c95b17f928931637f65fcf317e986c Mon Sep 17 00:00:00 2001
+Message-Id: <d75ea91fe4c95b17f928931637f65fcf317e986c@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Wed, 7 Feb 2018 14:16:01 +0100
+Subject: [PATCH] qemu: domain: Store vcpu halted state as a tristate
+
+Since it may be possible that the state is unknown in some cases we
+should store it as a tristate so that other code using it can determine
+whether the state was updated.
+
+(cherry picked from commit ca588a34b23a1f30dc7eeb7d5134706e31b403ef)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1534585
+---
+ src/qemu/qemu_domain.c |  3 ++-
+ src/qemu/qemu_domain.h |  2 +-
+ src/qemu/qemu_driver.c | 13 ++++---------
+ 3 files changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index b0c78cc7c4..e87c7d030c 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -8000,7 +8000,8 @@ qemuDomainRefreshVcpuHalted(virQEMUDriverPtr driver,
+     for (i = 0; i < maxvcpus; i++) {
+         vcpu = virDomainDefGetVcpu(vm->def, i);
+         vcpupriv = QEMU_DOMAIN_VCPU_PRIVATE(vcpu);
+-        vcpupriv->halted = virBitmapIsBitSet(haltedmap, vcpupriv->qemu_id);
++        vcpupriv->halted = virTristateBoolFromBool(virBitmapIsBitSet(haltedmap,
++                                                                     vcpupriv->qemu_id));
+     }
+ 
+     ret = 0;
+diff --git a/src/qemu/qemu_domain.h b/src/qemu/qemu_domain.h
+index 1a82922415..19e58ef3be 100644
+--- a/src/qemu/qemu_domain.h
++++ b/src/qemu/qemu_domain.h
+@@ -389,7 +389,7 @@ struct _qemuDomainVcpuPrivate {
+     int enable_id; /* order in which the vcpus were enabled in qemu */
+     int qemu_id; /* ID reported by qemu as 'CPU' in query-cpus */
+     char *alias;
+-    bool halted;
++    virTristateBool halted;
+ 
+     /* information for hotpluggable cpus */
+     char *type;
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index b5bef7442e..b8022a06ba 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -19526,7 +19526,6 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+     char param_name[VIR_TYPED_PARAM_FIELD_LENGTH];
+     virVcpuInfoPtr cpuinfo = NULL;
+     unsigned long long *cpuwait = NULL;
+-    bool vcpuhalted = false;
+ 
+     if (virTypedParamsAddUInt(&record->params,
+                               &record->nparams,
+@@ -19546,15 +19545,11 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+         VIR_ALLOC_N(cpuwait, virDomainDefGetVcpus(dom->def)) < 0)
+         goto cleanup;
+ 
+-    if (HAVE_JOB(privflags) && virDomainObjIsActive(dom)) {
+-        if (qemuDomainRefreshVcpuHalted(driver, dom,
+-                                        QEMU_ASYNC_JOB_NONE) < 0) {
++    if (HAVE_JOB(privflags) && virDomainObjIsActive(dom) &&
++        qemuDomainRefreshVcpuHalted(driver, dom, QEMU_ASYNC_JOB_NONE) < 0) {
+             /* it's ok to be silent and go ahead, because halted vcpu info
+              * wasn't here from the beginning */
+             virResetLastError();
+-        } else {
+-            vcpuhalted = true;
+-        }
+     }
+ 
+     if (qemuDomainHelperGetVcpus(dom, cpuinfo, cpuwait,
+@@ -19602,14 +19597,14 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+ 
+         vcpupriv = QEMU_DOMAIN_VCPU_PRIVATE(vcpu);
+ 
+-        if (vcpuhalted) {
++        if (vcpupriv->halted != VIR_TRISTATE_BOOL_ABSENT) {
+             snprintf(param_name, VIR_TYPED_PARAM_FIELD_LENGTH,
+                      "vcpu.%u.halted", cpuinfo[i].number);
+             if (virTypedParamsAddBoolean(&record->params,
+                                          &record->nparams,
+                                          maxparams,
+                                          param_name,
+-                                         vcpupriv->halted) < 0)
++                                         vcpupriv->halted == VIR_TRISTATE_BOOL_YES) < 0)
+                 goto cleanup;
+         }
+     }
+-- 
+2.16.1
+

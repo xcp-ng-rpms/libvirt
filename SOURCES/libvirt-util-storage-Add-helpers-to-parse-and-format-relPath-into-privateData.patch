@@ -1,0 +1,81 @@
+From a6aa51d7aa34a75355993d818a43bcb31094693e Mon Sep 17 00:00:00 2001
+Message-Id: <a6aa51d7aa34a75355993d818a43bcb31094693e@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 14 Dec 2017 14:31:52 +0100
+Subject: [PATCH] util: storage: Add helpers to parse and format relPath into
+ privateData
+
+This will be the first private piece of data that will need to be stored
+in the XML for some drivers. Add helpers which will do it.
+
+(cherry picked from commit cd31709351142a2770d2b9baa7755eaed672710a)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1523261
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/libvirt_private.syms  |  2 ++
+ src/util/virstoragefile.c | 20 ++++++++++++++++++++
+ src/util/virstoragefile.h |  8 ++++++++
+ 3 files changed, 30 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index cb76bbac87..478b3b3a6f 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -2728,6 +2728,8 @@ virStorageSourceParseRBDColonString;
+ virStorageSourcePoolDefFree;
+ virStorageSourcePoolModeTypeFromString;
+ virStorageSourcePoolModeTypeToString;
++virStorageSourcePrivateDataFormatRelPath;
++virStorageSourcePrivateDataParseRelPath;
+ virStorageSourceUpdateBackingSizes;
+ virStorageSourceUpdateCapacity;
+ virStorageSourceUpdatePhysicalSize;
+diff --git a/src/util/virstoragefile.c b/src/util/virstoragefile.c
+index 3a2d2aa056..d1e356a121 100644
+--- a/src/util/virstoragefile.c
++++ b/src/util/virstoragefile.c
+@@ -4083,3 +4083,23 @@ virStorageSourceNetworkAssignDefaultPorts(virStorageSourcePtr src)
+             src->hosts[i].port = virStorageSourceNetworkDefaultPort(src->protocol);
+     }
+ }
++
++
++int
++virStorageSourcePrivateDataParseRelPath(xmlXPathContextPtr ctxt,
++                                        virStorageSourcePtr src)
++{
++    src->relPath = virXPathString("string(./relPath)", ctxt);
++    return 0;
++}
++
++
++int
++virStorageSourcePrivateDataFormatRelPath(virStorageSourcePtr src,
++                                         virBufferPtr buf)
++{
++    if (src->relPath)
++        virBufferEscapeString(buf, "<relPath>%s</relPath>\n", src->relPath);
++
++    return 0;
++}
+diff --git a/src/util/virstoragefile.h b/src/util/virstoragefile.h
+index af8f56c8a1..c909488024 100644
+--- a/src/util/virstoragefile.h
++++ b/src/util/virstoragefile.h
+@@ -438,4 +438,12 @@ bool
+ virStorageSourceHasBacking(const virStorageSource *src);
+ 
+ 
++int
++virStorageSourcePrivateDataParseRelPath(xmlXPathContextPtr ctxt,
++                                        virStorageSourcePtr src);
++int
++virStorageSourcePrivateDataFormatRelPath(virStorageSourcePtr src,
++                                         virBufferPtr buf);
++
++
+ #endif /* __VIR_STORAGE_FILE_H__ */
+-- 
+2.15.1
+

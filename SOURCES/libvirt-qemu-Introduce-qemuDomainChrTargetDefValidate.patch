@@ -1,0 +1,151 @@
+From 9ec1516a227445872bf5bcb8a535c1a71f644739 Mon Sep 17 00:00:00 2001
+Message-Id: <9ec1516a227445872bf5bcb8a535c1a71f644739@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:05 +0100
+Subject: [PATCH] qemu: Introduce qemuDomainChrTargetDefValidate()
+
+Instead of waiting until we get to command line generation, we can
+validate the target for a char device much earlier.
+
+Move all the checks out of qemuBuildSerialChrDeviceStr() and into
+the new fuction. This will later allow us to validate the target
+for platform devices.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 81e14caf60ac28acf9b7147617ef26bb99955757)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c | 20 ----------------
+ src/qemu/qemu_domain.c  | 62 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 62 insertions(+), 20 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index d593e60198..8142834afd 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -10353,22 +10353,9 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+                                _("usb-serial is not supported in this QEMU binary"));
+                 goto error;
+             }
+-
+-            if (serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
+-                serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_USB) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("usb-serial requires address of usb type"));
+-                goto error;
+-            }
+             break;
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+-            if (serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
+-                serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_ISA) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("isa-serial requires address of isa type"));
+-                goto error;
+-            }
+             break;
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
+@@ -10377,13 +10364,6 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+                                _("pci-serial is not supported with this QEMU binary"));
+                 goto error;
+             }
+-
+-            if (serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
+-                serial->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("pci-serial requires address of pci type"));
+-                goto error;
+-            }
+             break;
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index e43f7496c2..35eb19ca32 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3456,6 +3456,65 @@ qemuDomainChrSourceDefValidate(const virDomainChrSourceDef *def)
+ }
+ 
+ 
++static int
++qemuDomainChrTargetDefValidate(const virDomainDef *def,
++                               const virDomainChrDef *chr)
++{
++    switch ((virDomainChrDeviceType) chr->deviceType) {
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL:
++
++        /* Validate target type */
++        switch ((virDomainChrSerialTargetType) chr->targetType) {
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++            /* Hack required until we have a proper type for pSeries
++             * serial consoles */
++            if (qemuDomainIsPSeries(def))
++                return 0;
++
++            if (chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
++                chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_ISA) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("isa-serial requires address of isa type"));
++                return -1;
++            }
++            break;
++
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++            if (chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
++                chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_USB) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("usb-serial requires address of usb type"));
++                return -1;
++            }
++            break;
++
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
++            if (chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
++                chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("pci-serial requires address of pci type"));
++                return -1;
++            }
++            break;
++
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
++            break;
++        }
++        break;
++
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_LAST:
++        /* Nothing to do */
++        break;
++    }
++
++    return 0;
++}
++
++
+ static int
+ qemuDomainChrDefValidate(const virDomainChrDef *dev,
+                          const virDomainDef *def)
+@@ -3463,6 +3522,9 @@ qemuDomainChrDefValidate(const virDomainChrDef *dev,
+     if (qemuDomainChrSourceDefValidate(dev->source) < 0)
+         return -1;
+ 
++    if (qemuDomainChrTargetDefValidate(def, dev) < 0)
++        return -1;
++
+     if (dev->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL &&
+         (ARCH_IS_S390(def->os.arch) || qemuDomainIsPSeries(def))) {
+             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-- 
+2.15.1
+

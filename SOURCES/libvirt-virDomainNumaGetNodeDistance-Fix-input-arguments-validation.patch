@@ -1,0 +1,40 @@
+From 1033a81438d6eae6eea225d489f876749f966f4d Mon Sep 17 00:00:00 2001
+Message-Id: <1033a81438d6eae6eea225d489f876749f966f4d@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 4 Dec 2017 13:38:49 +0100
+Subject: [PATCH] virDomainNumaGetNodeDistance: Fix input arguments validation
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+There's no point in checking if numa->mem_nodes[node].ndistances
+is set if we check for numa->mem_nodes[node].distances. However,
+it makes sense to check if the sibling node (@cellid) caller
+passed falls within boundaries.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 0ededbb84eb34539e326b4d4791772b699352302)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/numa_conf.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/conf/numa_conf.c b/src/conf/numa_conf.c
+index 7bba4120bd..c2f0d1ca8c 100644
+--- a/src/conf/numa_conf.c
++++ b/src/conf/numa_conf.c
+@@ -1153,8 +1153,8 @@ virDomainNumaGetNodeDistance(virDomainNumaPtr numa,
+      * defined default for local and remote nodes.
+      */
+     if (!distances ||
+-        !distances[cellid].value ||
+-        !numa->mem_nodes[node].ndistances)
++        cellid >= numa->nmem_nodes ||
++        !distances[cellid].value)
+         return (node == cellid) ? LOCAL_DISTANCE : REMOTE_DISTANCE;
+ 
+     return distances[cellid].value;
+-- 
+2.15.1
+

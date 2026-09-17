@@ -1,0 +1,178 @@
+From 4b4ddd95952a455426ec82c45c8309e346bb29c7 Mon Sep 17 00:00:00 2001
+Message-Id: <4b4ddd95952a455426ec82c45c8309e346bb29c7@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 15 Nov 2017 10:28:55 +0100
+Subject: [PATCH] tests: Add tests for configuration of HPT resizing
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 5e192a36201ed165c79bf66336747c220a7d63a2)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1308743
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ ...l2argv-pseries-hpt-resizing-invalid-machine.xml | 18 ++++++++++++++
+ .../qemuxml2argv-pseries-hpt-resizing.args         | 20 ++++++++++++++++
+ .../qemuxml2argv-pseries-hpt-resizing.xml          | 19 +++++++++++++++
+ tests/qemuxml2argvtest.c                           | 12 ++++++++++
+ .../qemuxml2xmlout-pseries-hpt-resizing.xml        | 28 ++++++++++++++++++++++
+ tests/qemuxml2xmltest.c                            |  5 ++++
+ 6 files changed, 102 insertions(+)
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing-invalid-machine.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-hpt-resizing.xml
+
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing-invalid-machine.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing-invalid-machine.xml
+new file mode 100644
+index 0000000000..757fcc70e1
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing-invalid-machine.xml
+@@ -0,0 +1,18 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='x86_64' machine='pc'>hvm</type>
++  </os>
++  <features>
++    <!-- HPT resizing can't be enabled for non-pSeries guests -->
++    <hpt resizing='enabled'/>
++  </features>
++  <devices>
++    <emulator>/usr/bin/qemu-system-x86_64</emulator>
++    <controller type='usb' model='none'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.args
+new file mode 100644
+index 0000000000..994789a5e0
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.args
+@@ -0,0 +1,20 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-ppc64 \
++-name guest \
++-S \
++-machine pseries,accel=tcg,resize-hpt=required \
++-m 512 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid 1ccfd97d-5eb4-478a-bbe6-88d254c16db7 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-guest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.xml
+new file mode 100644
+index 0000000000..f9dc9cac94
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-hpt-resizing.xml
+@@ -0,0 +1,19 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <features>
++    <!-- Explicitly enable HPT resizing. The guest will not start
++         at all unless HPT resizing can be arranged -->
++    <hpt resizing='required'/>
++  </features>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 03b1bcbcf7..ecc86d045c 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1848,6 +1848,18 @@ mymain(void)
+             QEMU_CAPS_VIRTIO_SCSI,
+             QEMU_CAPS_DEVICE_VFIO_PCI);
+ 
++    DO_TEST("pseries-hpt-resizing",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_MACHINE_OPT,
++            QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
++    DO_TEST_FAILURE("pseries-hpt-resizing",
++                    QEMU_CAPS_NODEFCONFIG,
++                    QEMU_CAPS_MACHINE_OPT);
++    DO_TEST_PARSE_ERROR("pseries-hpt-resizing-invalid-machine",
++                        QEMU_CAPS_NODEFCONFIG,
++                        QEMU_CAPS_MACHINE_OPT,
++                        QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
++
+     DO_TEST("disk-ide-drive-split",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_IDE_CD);
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-hpt-resizing.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-hpt-resizing.xml
+new file mode 100644
+index 0000000000..5dd0dbd0be
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-hpt-resizing.xml
+@@ -0,0 +1,28 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <currentMemory unit='KiB'>524288</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <features>
++    <hpt resizing='required'/>
++  </features>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' index='0' model='none'/>
++    <controller type='pci' index='0' model='pci-root'>
++      <model name='spapr-pci-host-bridge'/>
++      <target index='0'/>
++    </controller>
++    <memballoon model='none'/>
++    <panic model='pseries'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmltest.c b/tests/qemuxml2xmltest.c
+index fdba2adb98..6687997900 100644
+--- a/tests/qemuxml2xmltest.c
++++ b/tests/qemuxml2xmltest.c
+@@ -761,6 +761,11 @@ mymain(void)
+             QEMU_CAPS_VIRTIO_SCSI,
+             QEMU_CAPS_DEVICE_VFIO_PCI);
+ 
++    DO_TEST("pseries-hpt-resizing",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_MACHINE_OPT,
++            QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
++
+     DO_TEST("balloon-device-auto", NONE);
+     DO_TEST("balloon-device-period", NONE);
+     DO_TEST("channel-virtio-auto", NONE);
+-- 
+2.15.0
+

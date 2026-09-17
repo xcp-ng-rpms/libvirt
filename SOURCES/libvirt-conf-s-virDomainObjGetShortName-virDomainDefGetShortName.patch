@@ -1,0 +1,130 @@
+From db9daffe41e8804f9db0fb70678be99e02efc168 Mon Sep 17 00:00:00 2001
+Message-Id: <db9daffe41e8804f9db0fb70678be99e02efc168@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Thu, 9 Nov 2017 16:06:42 +0100
+Subject: [PATCH] conf: s/virDomainObjGetShortName/virDomainDefGetShortName/
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1461214
+
+This function works over domain definition and not domain object.
+Its name is thus misleading.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit fe70fd0c106e7fbe4f7272e5c041324ea3633ce4)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c   | 4 ++--
+ src/conf/domain_conf.h   | 2 +-
+ src/libvirt_private.syms | 2 +-
+ src/qemu/qemu_conf.c     | 2 +-
+ src/qemu/qemu_domain.c   | 4 ++--
+ src/qemu/qemu_driver.c   | 2 +-
+ 6 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 394afb0d80..27cfecffda 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -27871,14 +27871,14 @@ virDomainDefHasMemballoon(const virDomainDef *def)
+ #define VIR_DOMAIN_SHORT_NAME_MAX 20
+ 
+ /**
+- * virDomainObjGetShortName:
++ * virDomainDefGetShortName:
+  * @vm: Machine for which to get a name
+  * @unique: Make sure the name is unique (use id as well)
+  *
+  * Shorten domain name to avoid possible path length limitations.
+  */
+ char *
+-virDomainObjGetShortName(const virDomainDef *def)
++virDomainDefGetShortName(const virDomainDef *def)
+ {
+     wchar_t wshortname[VIR_DOMAIN_SHORT_NAME_MAX + 1] = {0};
+     size_t len = 0;
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 171f340785..388fa92dda 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -3366,7 +3366,7 @@ int virDomainDefGetVcpuPinInfoHelper(virDomainDefPtr def,
+ 
+ bool virDomainDefHasMemballoon(const virDomainDef *def) ATTRIBUTE_NONNULL(1);
+ 
+-char *virDomainObjGetShortName(const virDomainDef *def) ATTRIBUTE_NONNULL(1);
++char *virDomainDefGetShortName(const virDomainDef *def) ATTRIBUTE_NONNULL(1);
+ 
+ int
+ virDomainGetBlkioParametersAssignFromDef(virDomainDefPtr def,
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 811d9053e6..6653f95722 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -262,6 +262,7 @@ virDomainDefGetMemoryInitial;
+ virDomainDefGetMemoryTotal;
+ virDomainDefGetOnlineVcpumap;
+ virDomainDefGetSecurityLabelDef;
++virDomainDefGetShortName;
+ virDomainDefGetVcpu;
+ virDomainDefGetVcpuPinInfoHelper;
+ virDomainDefGetVcpus;
+@@ -458,7 +459,6 @@ virDomainObjGetMetadata;
+ virDomainObjGetOneDef;
+ virDomainObjGetOneDefState;
+ virDomainObjGetPersistentDef;
+-virDomainObjGetShortName;
+ virDomainObjGetState;
+ virDomainObjNew;
+ virDomainObjParseNode;
+diff --git a/src/qemu/qemu_conf.c b/src/qemu/qemu_conf.c
+index 4e5b33b788..66f9761eea 100644
+--- a/src/qemu/qemu_conf.c
++++ b/src/qemu/qemu_conf.c
+@@ -1676,7 +1676,7 @@ qemuGetDomainHugepagePath(const virDomainDef *def,
+                           virHugeTLBFSPtr hugepage)
+ {
+     char *base = qemuGetBaseHugepagePath(hugepage);
+-    char *domPath = virDomainObjGetShortName(def);
++    char *domPath = virDomainDefGetShortName(def);
+     char *ret = NULL;
+ 
+     if (base && domPath)
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 81bfef946e..27117d83ef 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -1706,7 +1706,7 @@ qemuDomainSetPrivatePaths(virQEMUDriverPtr driver,
+ {
+     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
+     qemuDomainObjPrivatePtr priv = vm->privateData;
+-    char *domname = virDomainObjGetShortName(vm->def);
++    char *domname = virDomainDefGetShortName(vm->def);
+     int ret = -1;
+ 
+     if (!domname)
+@@ -8207,7 +8207,7 @@ qemuDomainGetPreservedMountPath(virQEMUDriverConfigPtr cfg,
+     char *path = NULL;
+     char *tmp;
+     const char *suffix = mountpoint + strlen(DEVPREFIX);
+-    char *domname = virDomainObjGetShortName(vm->def);
++    char *domname = virDomainDefGetShortName(vm->def);
+     size_t off;
+ 
+     if (!domname)
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index 82c60e6ef1..5617c78997 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -4088,7 +4088,7 @@ getAutoDumpPath(virQEMUDriverPtr driver,
+                 virDomainObjPtr vm)
+ {
+     char *dumpfile = NULL;
+-    char *domname = virDomainObjGetShortName(vm->def);
++    char *domname = virDomainDefGetShortName(vm->def);
+     char timestr[100];
+     struct tm time_info;
+     time_t curtime = time(NULL);
+-- 
+2.15.0
+

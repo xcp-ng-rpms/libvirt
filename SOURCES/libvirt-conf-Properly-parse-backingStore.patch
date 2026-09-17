@@ -1,0 +1,200 @@
+From fee89d5de8520422225dc06fa95cc2dad66d7ebe Mon Sep 17 00:00:00 2001
+Message-Id: <fee89d5de8520422225dc06fa95cc2dad66d7ebe@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 13 Nov 2017 13:25:01 +0100
+Subject: [PATCH] conf: Properly parse <backingStore/>
+
+The terminator would not be parsed properly since the XPath selector was
+looking for an populated element, and also the code did not bother
+assigning the terminating virStorageSourcePtr to the backingStore
+property of the parent.
+
+Some tests would catch it if there wasn't bigger fallout from the change
+to backing store termination in a693fdba0111. Fix them properly now.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1509110
+(cherry picked from commit 19448a2561699807c075e071a45df292efd01f6b)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c                                 | 18 ++++++++----------
+ ...base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml |  1 +
+ .../qemuxml2xmlout-disk-active-commit.xml              |  1 +
+ .../qemuxml2xmlout-disk-backing-chains-active.xml      |  3 +++
+ .../qemuxml2xmlout-disk-mirror-active.xml              |  4 ++++
+ .../qemuxml2xmlout-disk-mirror-old.xml                 |  4 ++++
+ .../qemuxml2xmlout-seclabel-static-labelskip.xml       |  1 +
+ 7 files changed, 22 insertions(+), 10 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 27cfecffda..3b337d1a64 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -8539,16 +8539,7 @@ virDomainDiskBackingStoreParse(xmlXPathContextPtr ctxt,
+     char *idx = NULL;
+     int ret = -1;
+ 
+-    if (!(ctxt->node = virXPathNode("./backingStore[*]", ctxt))) {
+-        ret = 0;
+-        goto cleanup;
+-    }
+-
+-    if (!(type = virXMLPropString(ctxt->node, "type"))) {
+-        /* terminator does not have a type */
+-        if (VIR_ALLOC(backingStore) < 0)
+-            goto cleanup;
+-
++    if (!(ctxt->node = virXPathNode("./backingStore", ctxt))) {
+         ret = 0;
+         goto cleanup;
+     }
+@@ -8556,6 +8547,13 @@ virDomainDiskBackingStoreParse(xmlXPathContextPtr ctxt,
+     if (VIR_ALLOC(backingStore) < 0)
+         goto cleanup;
+ 
++    /* terminator does not have a type */
++    if (!(type = virXMLPropString(ctxt->node, "type"))) {
++        VIR_STEAL_PTR(src->backingStore, backingStore);
++        ret = 0;
++        goto cleanup;
++    }
++
+     if (!(flags & VIR_DOMAIN_DEF_PARSE_INACTIVE) &&
+         (idx = virXMLPropString(ctxt->node, "index")) &&
+         virStrToLong_uip(idx, NULL, 10, &backingStore->id) < 0) {
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
+index 9482b6794a..16caeb3542 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-base-live+disk-scsi-wwn+disk-scsi-duplicate-wwn.xml
+@@ -22,6 +22,7 @@
+     <disk type='file' device='disk'>
+       <driver name='qemu' type='raw' cache='none'/>
+       <source file='/dev/null'/>
++      <backingStore/>
+       <target dev='sdf' bus='scsi'/>
+       <readonly/>
+       <shareable/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-active-commit.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-active-commit.xml
+index 5766e4aea8..cc26af1096 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-active-commit.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-active-commit.xml
+@@ -20,6 +20,7 @@
+       <backingStore type='block' index='1'>
+         <format type='raw'/>
+         <source dev='/dev/HostVG/QEMUGuest1'/>
++        <backingStore/>
+       </backingStore>
+       <mirror type='block' job='active-commit'>
+         <format type='raw'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-backing-chains-active.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-backing-chains-active.xml
+index 828defcc25..d1fd2442c3 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-backing-chains-active.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-backing-chains-active.xml
+@@ -49,6 +49,7 @@
+                 <backingStore type='file' index='6'>
+                   <format type='raw'/>
+                   <source file='/tmp/Fedora-17-x86_64-Live-KDE.iso'/>
++                  <backingStore/>
+                 </backingStore>
+               </backingStore>
+             </backingStore>
+@@ -63,6 +64,7 @@
+       <source protocol='gluster' name='Volume1/Image'>
+         <host name='example.org' port='6000'/>
+       </source>
++      <backingStore/>
+       <target dev='vdc' bus='virtio'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+     </disk>
+@@ -79,6 +81,7 @@
+       <backingStore type='file' index='1'>
+         <format type='qcow2'/>
+         <source file='/tmp/image.qcow'/>
++        <backingStore/>
+       </backingStore>
+       <target dev='vdd' bus='virtio'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x06' function='0x0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-active.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-active.xml
+index 252bde3389..c1e8a33ec1 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-active.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-active.xml
+@@ -16,6 +16,7 @@
+     <emulator>/usr/bin/qemu-system-i686</emulator>
+     <disk type='block' device='disk'>
+       <source dev='/dev/HostVG/QEMUGuest1'/>
++      <backingStore/>
+       <mirror type='block' job='copy' ready='yes'>
+         <source dev='/dev/HostVG/QEMUGuest1Copy'/>
+       </mirror>
+@@ -24,12 +25,14 @@
+     </disk>
+     <disk type='block' device='cdrom'>
+       <source dev='/dev/HostVG/QEMUGuest2'/>
++      <backingStore/>
+       <target dev='hdc' bus='ide'/>
+       <readonly/>
+       <address type='drive' controller='0' bus='1' target='0' unit='0'/>
+     </disk>
+     <disk type='file' device='disk'>
+       <source file='/tmp/data.img'/>
++      <backingStore/>
+       <mirror type='file' file='/tmp/copy.img' format='qcow2' job='copy'>
+         <format type='qcow2'/>
+         <source file='/tmp/copy.img'/>
+@@ -39,6 +42,7 @@
+     </disk>
+     <disk type='file' device='disk'>
+       <source file='/tmp/logs.img'/>
++      <backingStore/>
+       <mirror type='file' file='/tmp/logcopy.img' format='qcow2' job='copy' ready='abort'>
+         <format type='qcow2'/>
+         <source file='/tmp/logcopy.img'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-old.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-old.xml
+index f4bd39a580..e390bc02f2 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-old.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-disk-mirror-old.xml
+@@ -16,6 +16,7 @@
+     <emulator>/usr/bin/qemu-system-i686</emulator>
+     <disk type='block' device='disk'>
+       <source dev='/dev/HostVG/QEMUGuest1'/>
++      <backingStore/>
+       <mirror type='file' file='/dev/HostVG/QEMUGuest1Copy' job='copy' ready='yes'>
+         <source file='/dev/HostVG/QEMUGuest1Copy'/>
+       </mirror>
+@@ -24,12 +25,14 @@
+     </disk>
+     <disk type='block' device='cdrom'>
+       <source dev='/dev/HostVG/QEMUGuest2'/>
++      <backingStore/>
+       <target dev='hdc' bus='ide'/>
+       <readonly/>
+       <address type='drive' controller='0' bus='1' target='0' unit='0'/>
+     </disk>
+     <disk type='file' device='disk'>
+       <source file='/tmp/data.img'/>
++      <backingStore/>
+       <mirror type='file' file='/tmp/copy.img' format='qcow2' job='copy'>
+         <format type='qcow2'/>
+         <source file='/tmp/copy.img'/>
+@@ -39,6 +42,7 @@
+     </disk>
+     <disk type='file' device='disk'>
+       <source file='/tmp/logs.img'/>
++      <backingStore/>
+       <target dev='vdb' bus='virtio'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+     </disk>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-seclabel-static-labelskip.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-seclabel-static-labelskip.xml
+index 91f573db7d..d37b950cbf 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-seclabel-static-labelskip.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-seclabel-static-labelskip.xml
+@@ -18,6 +18,7 @@
+       <source dev='/dev/HostVG/QEMUGuest1'>
+         <seclabel model='selinux' labelskip='yes'/>
+       </source>
++      <backingStore/>
+       <target dev='hda' bus='ide'/>
+       <address type='drive' controller='0' bus='0' target='0' unit='0'/>
+     </disk>
+-- 
+2.15.0
+

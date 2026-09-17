@@ -1,0 +1,100 @@
+From a2798982df8432b5d26f247516ca5a43e0a94c58 Mon Sep 17 00:00:00 2001
+Message-Id: <a2798982df8432b5d26f247516ca5a43e0a94c58@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 9 Apr 2018 15:46:48 +0200
+Subject: [PATCH] util: Introduce virStringListMerge
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1564996
+
+For two string lists merge one into the other one.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 72bf14d3456373130cd47157c0062e9125318716)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virstring.c     | 36 ++++++++++++++++++++++++++++++++++++
+ src/util/virstring.h     |  3 +++
+ 3 files changed, 40 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 9c64d0cb97..15cc83931a 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -2775,6 +2775,7 @@ virStringListGetFirstWithPrefix;
+ virStringListHasString;
+ virStringListJoin;
+ virStringListLength;
++virStringListMerge;
+ virStringListRemove;
+ virStringMatch;
+ virStringParsePort;
+diff --git a/src/util/virstring.c b/src/util/virstring.c
+index b2ebce27ff..47d9efba25 100644
+--- a/src/util/virstring.c
++++ b/src/util/virstring.c
+@@ -239,6 +239,42 @@ virStringListRemove(char ***strings,
+ }
+ 
+ 
++/**
++ * virStringListMerge:
++ * @dst: a NULL-terminated array of strings to expand
++ * @src: a NULL-terminated array of strings
++ *
++ * Merges @src into @dst. Upon successful return from this
++ * function, @dst is resized to $(dst + src) elements and @src is
++ * freed.
++ *
++ * Returns 0 on success, -1 otherwise.
++ */
++int
++virStringListMerge(char ***dst,
++                   char ***src)
++{
++    size_t dst_len, src_len, i;
++
++    if (!src || !*src)
++        return 0;
++
++    dst_len = virStringListLength((const char **) *dst);
++    src_len = virStringListLength((const char **) *src);
++
++    if (VIR_REALLOC_N(*dst, dst_len + src_len + 1) < 0)
++        return -1;
++
++    for (i = 0; i <= src_len; i++)
++        (*dst)[i + dst_len] = (*src)[i];
++
++    /* Don't call virStringListFree() as it would free strings in
++     * @src. */
++    VIR_FREE(*src);
++    return 0;
++}
++
++
+ /**
+  * virStringListCopy:
+  * @dst: where to store the copy of @strings
+diff --git a/src/util/virstring.h b/src/util/virstring.h
+index cfd91be314..1fd43f98b7 100644
+--- a/src/util/virstring.h
++++ b/src/util/virstring.h
+@@ -46,6 +46,9 @@ char **virStringListAdd(const char **strings,
+ void virStringListRemove(char ***strings,
+                          const char *item);
+ 
++int virStringListMerge(char ***dst,
++                       char ***src);
++
+ int virStringListCopy(char ***dst,
+                       const char **src);
+ 
+-- 
+2.17.0
+

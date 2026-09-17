@@ -1,0 +1,76 @@
+From f0b982a8f6e736bcf5070c6d3ed166159792dda1 Mon Sep 17 00:00:00 2001
+Message-Id: <f0b982a8f6e736bcf5070c6d3ed166159792dda1@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:33 +0100
+Subject: [PATCH] tests: Clean up and modify some vircaps2xmldata
+
+Basically the `cpus` and `tasks` files are not needed, and I've witnessed on a
+real system that the schemata file may have spaces prepended to a line, so let's
+adjust at least one test so that it reflects what can happen.  Also `000`
+allocation is invalid and a full mask means it's all free.  So adjust for that
+too.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 47bb586c7533fc9f8366d078b3db26e791aaadf2)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/cpus               | 1 -
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/tasks              | 0
+ tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata | 2 +-
+ tests/vircaps2xmldata/linux-resctrl/resctrl/cpus                   | 1 -
+ tests/vircaps2xmldata/linux-resctrl/resctrl/schemata               | 2 +-
+ tests/vircaps2xmldata/linux-resctrl/resctrl/tasks                  | 0
+ tests/virresctrldata/resctrl-skx-twocaches.schemata                | 2 +-
+ 7 files changed, 3 insertions(+), 5 deletions(-)
+ delete mode 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/cpus
+ delete mode 100644 tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/tasks
+ delete mode 100644 tests/vircaps2xmldata/linux-resctrl/resctrl/cpus
+ delete mode 100644 tests/vircaps2xmldata/linux-resctrl/resctrl/tasks
+
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/cpus b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/cpus
+deleted file mode 100644
+index b3a79aa953..0000000000
+--- a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/cpus
++++ /dev/null
+@@ -1 +0,0 @@
+-ffffff,ffffffff,ffffffff
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/tasks b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/tasks
+deleted file mode 100644
+index e69de29bb2..0000000000
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
+index 691fbaf887..23af473be4 100644
+--- a/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
++++ b/tests/vircaps2xmldata/linux-resctrl-skx-twocaches/resctrl/schemata
+@@ -1 +1 @@
+-L3:0=0f0;1=000
++L3:0=0f0;1=7ff
+diff --git a/tests/vircaps2xmldata/linux-resctrl/resctrl/cpus b/tests/vircaps2xmldata/linux-resctrl/resctrl/cpus
+deleted file mode 100644
+index 98d03acc98..0000000000
+--- a/tests/vircaps2xmldata/linux-resctrl/resctrl/cpus
++++ /dev/null
+@@ -1 +0,0 @@
+-fff
+diff --git a/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
+index c1a765f1e0..78d2d8a9b8 100644
+--- a/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
++++ b/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
+@@ -1 +1 @@
+-L3:0=1ff00;1=1ff0f
++    L3:0=1ff00;1=1ff0f
+diff --git a/tests/vircaps2xmldata/linux-resctrl/resctrl/tasks b/tests/vircaps2xmldata/linux-resctrl/resctrl/tasks
+deleted file mode 100644
+index e69de29bb2..0000000000
+diff --git a/tests/virresctrldata/resctrl-skx-twocaches.schemata b/tests/virresctrldata/resctrl-skx-twocaches.schemata
+index 86b3801a04..890d003bf2 100644
+--- a/tests/virresctrldata/resctrl-skx-twocaches.schemata
++++ b/tests/virresctrldata/resctrl-skx-twocaches.schemata
+@@ -1 +1 @@
+-L3:0=001;1=400
++L3:0=001;1=000
+-- 
+2.16.1
+

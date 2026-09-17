@@ -1,0 +1,67 @@
+From 6532e10f6ddec18ab70f58dc660062d369b82304 Mon Sep 17 00:00:00 2001
+Message-Id: <6532e10f6ddec18ab70f58dc660062d369b82304@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:17 +0100
+Subject: [PATCH] conf: Sort cache banks in capabilities XML
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Because the cache banks are initialized based on the order in which their
+respective directories exist on the filesystem, they can appear in different
+order.  This is here mainly for tests because the cache directory might have
+different order of children nodes and tests would fail otherwise.  It should not
+be the case with sysfs, but one can never be sure.  And this does not take
+almost any extra time, mainly because it gets initialized once per driver.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit b4698edcb0a459332b24410f59698005af37eecb)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/conf/capabilities.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/src/conf/capabilities.c b/src/conf/capabilities.c
+index 9920a675ac..1f7d8cdb31 100644
+--- a/src/conf/capabilities.c
++++ b/src/conf/capabilities.c
+@@ -1561,6 +1561,23 @@ virCapsHostCacheBankFree(virCapsHostCacheBankPtr ptr)
+     VIR_FREE(ptr);
+ }
+ 
++
++static int
++virCapsHostCacheBankSorter(const void *a,
++                           const void *b)
++{
++    virCapsHostCacheBankPtr ca = *(virCapsHostCacheBankPtr *)a;
++    virCapsHostCacheBankPtr cb = *(virCapsHostCacheBankPtr *)b;
++
++    if (ca->level < cb->level)
++        return -1;
++    if (ca->level > cb->level)
++        return 1;
++
++    return ca->id - cb->id;
++}
++
++
+ int
+ virCapabilitiesInitCaches(virCapsPtr caps)
+ {
+@@ -1700,6 +1717,12 @@ virCapabilitiesInitCaches(virCapsPtr caps)
+             goto cleanup;
+     }
+ 
++    /* Sort the array in order for the tests to be predictable.  This way we can
++     * still traverse the directory instead of guessing names (in case there is
++     * 'index1' and 'index3' but no 'index2'). */
++    qsort(caps->host.caches, caps->host.ncaches,
++          sizeof(*caps->host.caches), virCapsHostCacheBankSorter);
++
+     ret = 0;
+  cleanup:
+     VIR_FREE(type);
+-- 
+2.16.1
+

@@ -1,0 +1,44 @@
+From 0d914e2528519ec2130a01017b32c373964fb825 Mon Sep 17 00:00:00 2001
+Message-Id: <0d914e2528519ec2130a01017b32c373964fb825@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 1 Dec 2017 15:48:38 +0100
+Subject: [PATCH] virDomainDiskBackingStoreParse: Don't leak @idx
+
+==1277== 8 bytes in 4 blocks are definitely lost in loss record 39 of 131
+==1277==    at 0x4C2AEDF: malloc (vg_replace_malloc.c:299)
+==1277==    by 0x68BBBC8: xmlStrndup (in /usr/lib64/libxml2.so.2.9.4)
+==1277==    by 0x53B1DC2: virXMLPropString (virxml.c:510)
+==1277==    by 0x53D696A: virDomainDiskBackingStoreParse (domain_conf.c:8639)
+==1277==    by 0x53DA684: virDomainDiskDefParseXML (domain_conf.c:9590)
+==1277==    by 0x53F619F: virDomainDefParseXML (domain_conf.c:19233)
+==1277==    by 0x53F96EE: virDomainDefParseNode (domain_conf.c:20083)
+==1277==    by 0x53F9540: virDomainDefParse (domain_conf.c:20027)
+==1277==    by 0x53F95E6: virDomainDefParseFile (domain_conf.c:20053)
+==1277==    by 0x44D1D4: testCompareDomXML2XMLFiles (testutils.c:1265)
+==1277==    by 0x42FC7C: testXML2XMLActive (qemuxml2xmltest.c:71)
+==1277==    by 0x44AD20: virTestRun (testutils.c:180)
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 0fd85b98aee9094bf61a2db86b795421119a41b5)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1519759
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 3bb66e4326..83392a42c0 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -8671,6 +8671,7 @@ virDomainDiskBackingStoreParse(xmlXPathContextPtr ctxt,
+     virStorageSourceFree(backingStore);
+     VIR_FREE(type);
+     VIR_FREE(format);
++    VIR_FREE(idx);
+     ctxt->node = save_ctxt;
+     return ret;
+ }
+-- 
+2.15.1
+

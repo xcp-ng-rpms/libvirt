@@ -1,0 +1,115 @@
+From 92a9394006873d494610bad839255363c36e65c3 Mon Sep 17 00:00:00 2001
+Message-Id: <92a9394006873d494610bad839255363c36e65c3@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 4 Dec 2017 13:38:51 +0100
+Subject: [PATCH] qemu_capabilities: Introcude QEMU_CAPS_NUMA_DIST
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+This capability says if qemu is capable of specifying distances
+between NUMA nodes on the command line. Unfortunately, there's no
+real way to check this and thus we have to go with version check.
+QEMU introduced this in 0f203430dd8 (and friend) which was
+released in 2.10.0.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 13e148ebda9ef0a064aa811aa14bcbb35c157ceb)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+
+ Conflicts:
+	src/qemu/qemu_capabilities.c
+	src/qemu/qemu_capabilities.h
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv2.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv3.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+
+        - Context as some capabilities are not backported.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c                      | 6 +++++-
+ src/qemu/qemu_capabilities.h                      | 2 +-
+ tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml  | 1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml  | 1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml | 1 +
+ 5 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index ae5448eaaa..d1677144b7 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -449,7 +449,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+ 
+               /* 275 */
+               "sclplmconsole",
+-
++              "numa.dist",
+               "disk-share-rw",
+ 
+               "isa-serial",
+@@ -4808,6 +4808,10 @@ virQEMUCapsInitQMPMonitor(virQEMUCapsPtr qemuCaps,
+         virQEMUCapsSet(qemuCaps, QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
+     }
+ 
++    /* no way to query for -numa dist */
++    if (qemuCaps->version >= 2010000)
++        virQEMUCapsSet(qemuCaps, QEMU_CAPS_NUMA_DIST);
++
+     if (virQEMUCapsProbeQMPCommands(qemuCaps, mon) < 0)
+         goto cleanup;
+ 
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index c809f83404..3e016b7c79 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -435,7 +435,7 @@ typedef enum {
+ 
+     /* 275 */
+     QEMU_CAPS_DEVICE_SCLPLMCONSOLE, /* -device sclplmconsole */
+-
++    QEMU_CAPS_NUMA_DIST, /* -numa dist */
+     QEMU_CAPS_DISK_SHARE_RW, /* share-rw=on for concurrent disk access */
+ 
+     QEMU_CAPS_DEVICE_ISA_SERIAL, /* -device isa-serial */
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+index 23356f4092..09cce92067 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+@@ -179,6 +179,7 @@
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='machine.pseries.resize-hpt'/>
+   <flag name='spapr-vty'/>
++  <flag name='numa.dist'/>
+   <flag name='disk-share-rw'/>
+   <flag name='isa-serial'/>
+   <version>2010000</version>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+index 463c30c77a..00fe1cffa7 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+@@ -142,6 +142,7 @@
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
+   <flag name='sclplmconsole'/>
++  <flag name='numa.dist'/>
+   <flag name='disk-share-rw'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+index e04e530b95..2417251678 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+@@ -224,6 +224,7 @@
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='numa.dist'/>
+   <flag name='disk-share-rw'/>
+   <flag name='isa-serial'/>
+   <version>2010000</version>
+-- 
+2.15.1
+

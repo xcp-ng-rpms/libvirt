@@ -1,0 +1,92 @@
+From 1bf25232a148ae013a327e1096fb221182a9ed7d Mon Sep 17 00:00:00 2001
+Message-Id: <1bf25232a148ae013a327e1096fb221182a9ed7d@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:20 +0100
+Subject: [PATCH] tests: Minor adjustments for test data
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+This patch modifies some not yet used test data so that the adding a test using
+this data is a clean patch and not an addition of huge file with some
+adjustments in small files that will be hidden in the middle of that commit.
+These changes include:
+
+- Add system dir in vircaps2xmldata/linux-caches
+
+  Back when data for systems with resctrl support were added they had the
+  /sys/fs/system directory put into a system/ subdir of the test and
+  /sys/fs/resctrl in a resctrl/ subdir of that test.  However, if we also want a
+  negative test for the resctrl (requesting allocation on a system that does not
+  support resctrl), we need one a test case with any sensible (with cache info)
+  system/ subdir and no resctrl/ one.  Easiest way is to add a
+  system -> . symlink into existing test case.
+
+- Change default group schemata for linux-resctrl and linux-resctrl-cdp
+
+  That way we can fit some allocation in.
+
+- Remove one cache from resctrl-skx's schemata and make some room for
+  allocations
+
+  That system already has only one cache, so that file was wrong anyway.  We
+  have a version with 2 caches already (linux-resctrl-skx-twocaches), so this
+  will also add variety to future tests.
+
+- Add some empty allocation for resctrl-skx
+
+  Just to have slightly more coverage and variety.  We can be sure nothing bad
+  happens if such allocation exists in case we have that in the tests.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 993c7f003012d1f249f1cdecc6ac56abaffe1e9b)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ tests/vircaps2xmldata/linux-caches/system                      | 1 +
+ tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/schemata       | 4 ++--
+ tests/vircaps2xmldata/linux-resctrl-skx/resctrl/empty/schemata | 0
+ tests/vircaps2xmldata/linux-resctrl-skx/resctrl/schemata       | 2 +-
+ tests/vircaps2xmldata/linux-resctrl/resctrl/schemata           | 2 +-
+ 5 files changed, 5 insertions(+), 4 deletions(-)
+ create mode 120000 tests/vircaps2xmldata/linux-caches/system
+ create mode 100644 tests/vircaps2xmldata/linux-resctrl-skx/resctrl/empty/schemata
+
+diff --git a/tests/vircaps2xmldata/linux-caches/system b/tests/vircaps2xmldata/linux-caches/system
+new file mode 120000
+index 0000000000..945c9b46d6
+--- /dev/null
++++ b/tests/vircaps2xmldata/linux-caches/system
+@@ -0,0 +1 @@
++.
+\ No newline at end of file
+diff --git a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/schemata
+index 89dc76b864..5de8fb0261 100644
+--- a/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/schemata
++++ b/tests/vircaps2xmldata/linux-resctrl-cdp/resctrl/schemata
+@@ -1,2 +1,2 @@
+-L3DATA:0=fffff;1=fffff
+-L3CODE:0=fffff;1=fffff
++L3DATA:0=fffff;1=fc000
++L3CODE:0=ff003;1=f00ff
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/empty/schemata b/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/empty/schemata
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/schemata
+index 4a49137353..191081f1db 100644
+--- a/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/schemata
++++ b/tests/vircaps2xmldata/linux-resctrl-skx/resctrl/schemata
+@@ -1 +1 @@
+-L3:0=7ff;1=7ff
++L3:0=0f0
+diff --git a/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata b/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
+index 9b47d25fc7..c1a765f1e0 100644
+--- a/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
++++ b/tests/vircaps2xmldata/linux-resctrl/resctrl/schemata
+@@ -1 +1 @@
+-L3:0=1ffff;1=1ffff
++L3:0=1ff00;1=1ff0f
+-- 
+2.16.1
+

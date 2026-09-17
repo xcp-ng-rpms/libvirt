@@ -1,0 +1,58 @@
+From 92867e9b9ff1d9a163c6c166e710ba7c444be520 Mon Sep 17 00:00:00 2001
+Message-Id: <92867e9b9ff1d9a163c6c166e710ba7c444be520@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Thu, 11 Jan 2018 20:47:50 +0100
+Subject: [PATCH] qemu: Fix type of a completed job
+
+Libvirt 3.7.0 and earlier libvirt reported a migration job as completed
+immediately after QEMU finished sending migration data at which point
+migration was not really complete yet. Commit v3.7.0-29-g3f2d6d829e
+fixed this, but caused a regression in reporting statistics for
+completed jobs which started reporting the job as still running. This
+happened because the completed job statistics including the job status
+are copied from the running job before we finally mark it as completed.
+
+Let's make sure QEMU_DOMAIN_JOB_STATUS_COMPLETED is always set in the
+completed job info even when the job has not finished yet.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1523036
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit e8784e7868d44a2ce796b376cf78f0f6c61c114a)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_migration.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/qemu/qemu_migration.c b/src/qemu/qemu_migration.c
+index af744661f4..b814cc6608 100644
+--- a/src/qemu/qemu_migration.c
++++ b/src/qemu/qemu_migration.c
+@@ -1623,8 +1623,10 @@ qemuMigrationWaitForCompletion(virQEMUDriverPtr driver,
+     qemuDomainJobInfoUpdateTime(jobInfo);
+     qemuDomainJobInfoUpdateDowntime(jobInfo);
+     VIR_FREE(priv->job.completed);
+-    if (VIR_ALLOC(priv->job.completed) == 0)
++    if (VIR_ALLOC(priv->job.completed) == 0) {
+         *priv->job.completed = *jobInfo;
++        priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
++    }
+ 
+     if (asyncJob != QEMU_ASYNC_JOB_MIGRATION_OUT &&
+         jobInfo->status == QEMU_DOMAIN_JOB_STATUS_QEMU_COMPLETED)
+@@ -5457,8 +5459,9 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
+     }
+ 
+     if (dom) {
+-        priv->job.completed = jobInfo;
+-        jobInfo = NULL;
++        VIR_STEAL_PTR(priv->job.completed, jobInfo);
++        priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
++
+         if (qemuMigrationBakeCookie(mig, driver, vm, cookieout, cookieoutlen,
+                                     QEMU_MIGRATION_COOKIE_STATS) < 0)
+             VIR_WARN("Unable to encode migration cookie");
+-- 
+2.15.1
+

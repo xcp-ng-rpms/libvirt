@@ -1,0 +1,102 @@
+From 22398ee5b022b7831477d79959d4990a849b7e55 Mon Sep 17 00:00:00 2001
+Message-Id: <22398ee5b022b7831477d79959d4990a849b7e55@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 15 Nov 2017 10:28:52 +0100
+Subject: [PATCH] tests: Rename ppc64le caps to ppc64
+
+The architecture itself is called ppc64, and it can run both in big
+endian and little endian mode - the latter is known as ppc64le.
+
+>From the (virtual) hardware point of view, ppc64 is a more accurate
+name so it should be used here.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 61ea70341a668738a4fb524a65fa1a80705b2bab)
+
+Conflicts:
+  * tests/qemucapabilitiestest.c:
+    caused by missing capabilities for QEMU 2.10.0 on aarch64
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1308743
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ .../{qemu_2.6.0.ppc64le.xml => qemu_2.6.0.ppc64.xml}                  | 2 +-
+ tests/domaincapstest.c                                                | 2 +-
+ .../{caps_2.6.0.ppc64le.replies => caps_2.6.0.ppc64.replies}          | 0
+ .../{caps_2.6.0.ppc64le.xml => caps_2.6.0.ppc64.xml}                  | 0
+ .../{caps_2.9.0.ppc64le.replies => caps_2.9.0.ppc64.replies}          | 0
+ .../{caps_2.9.0.ppc64le.xml => caps_2.9.0.ppc64.xml}                  | 0
+ tests/qemucapabilitiestest.c                                          | 4 ++--
+ 7 files changed, 4 insertions(+), 4 deletions(-)
+ rename tests/domaincapsschemadata/{qemu_2.6.0.ppc64le.xml => qemu_2.6.0.ppc64.xml} (98%)
+ rename tests/qemucapabilitiesdata/{caps_2.6.0.ppc64le.replies => caps_2.6.0.ppc64.replies} (100%)
+ rename tests/qemucapabilitiesdata/{caps_2.6.0.ppc64le.xml => caps_2.6.0.ppc64.xml} (100%)
+ rename tests/qemucapabilitiesdata/{caps_2.9.0.ppc64le.replies => caps_2.9.0.ppc64.replies} (100%)
+ rename tests/qemucapabilitiesdata/{caps_2.9.0.ppc64le.xml => caps_2.9.0.ppc64.xml} (100%)
+
+diff --git a/tests/domaincapsschemadata/qemu_2.6.0.ppc64le.xml b/tests/domaincapsschemadata/qemu_2.6.0.ppc64.xml
+similarity index 98%
+rename from tests/domaincapsschemadata/qemu_2.6.0.ppc64le.xml
+rename to tests/domaincapsschemadata/qemu_2.6.0.ppc64.xml
+index 5b986e52f7..98c72d36de 100644
+--- a/tests/domaincapsschemadata/qemu_2.6.0.ppc64le.xml
++++ b/tests/domaincapsschemadata/qemu_2.6.0.ppc64.xml
+@@ -2,7 +2,7 @@
+   <path>/usr/bin/qemu-system-ppc64</path>
+   <domain>kvm</domain>
+   <machine>pseries-2.6</machine>
+-  <arch>ppc64le</arch>
++  <arch>ppc64</arch>
+   <vcpu max='255'/>
+   <os supported='yes'>
+     <loader supported='yes'>
+diff --git a/tests/domaincapstest.c b/tests/domaincapstest.c
+index 7aeac4507f..f3f623bb3d 100644
+--- a/tests/domaincapstest.c
++++ b/tests/domaincapstest.c
+@@ -460,7 +460,7 @@ mymain(void)
+ 
+     DO_TEST_QEMU("2.6.0", "caps_2.6.0",
+                  "/usr/bin/qemu-system-ppc64", NULL,
+-                 "ppc64le", VIR_DOMAIN_VIRT_KVM);
++                 "ppc64", VIR_DOMAIN_VIRT_KVM);
+ 
+     DO_TEST_QEMU("2.8.0", "caps_2.8.0",
+                  "/usr/bin/qemu-system-x86_64", NULL,
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64le.replies b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.replies
+similarity index 100%
+rename from tests/qemucapabilitiesdata/caps_2.6.0.ppc64le.replies
+rename to tests/qemucapabilitiesdata/caps_2.6.0.ppc64.replies
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64le.xml b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+similarity index 100%
+rename from tests/qemucapabilitiesdata/caps_2.6.0.ppc64le.xml
+rename to tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64le.replies b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.replies
+similarity index 100%
+rename from tests/qemucapabilitiesdata/caps_2.9.0.ppc64le.replies
+rename to tests/qemucapabilitiesdata/caps_2.9.0.ppc64.replies
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64le.xml b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+similarity index 100%
+rename from tests/qemucapabilitiesdata/caps_2.9.0.ppc64le.xml
+rename to tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+diff --git a/tests/qemucapabilitiestest.c b/tests/qemucapabilitiestest.c
+index df3a9de516..9bb1ffca6a 100644
+--- a/tests/qemucapabilitiestest.c
++++ b/tests/qemucapabilitiestest.c
+@@ -173,8 +173,8 @@ mymain(void)
+     DO_TEST("x86_64", "caps_2.10.0");
+     DO_TEST("aarch64", "caps_2.6.0-gicv2");
+     DO_TEST("aarch64", "caps_2.6.0-gicv3");
+-    DO_TEST("ppc64le", "caps_2.6.0");
+-    DO_TEST("ppc64le", "caps_2.9.0");
++    DO_TEST("ppc64", "caps_2.6.0");
++    DO_TEST("ppc64", "caps_2.9.0");
+     DO_TEST("s390x", "caps_2.7.0");
+     DO_TEST("s390x", "caps_2.8.0");
+     DO_TEST("s390x", "caps_2.9.0");
+-- 
+2.15.0
+

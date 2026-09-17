@@ -1,0 +1,89 @@
+From 2e8ff390a9ee06b68a2591c761d185539beb49d4 Mon Sep 17 00:00:00 2001
+Message-Id: <2e8ff390a9ee06b68a2591c761d185539beb49d4@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Thu, 30 Nov 2017 17:45:58 +0100
+Subject: [PATCH] qemu: prefer the PCI bus alias from status XML
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+For some corner cases, virQEMUCapsHasPCIMultiBus depends on the QEMU
+version, which is by design not stored in the status XML and therefore
+it cannot be fixed for all existing running domains.
+
+Prefer the controller alias read from the status XML when formatting
+PCI addresses and only fall back to using virQEMUCapsHasPCIMultiBus
+if the alias is a user alias.
+
+This fixes hotplug after daemon restart for domains not using user
+aliases.
+
+Partially reverts commit 937f3195.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1518148
+(cherry picked from commit dacfc6b10bcff1c275d21a37edf0bc83e0947492)
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c | 42 ++++++++++++++++++++++--------------------
+ 1 file changed, 22 insertions(+), 20 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 624a50d0b3..b462c7cf09 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -318,29 +318,31 @@ qemuBuildDeviceAddressStr(virBufferPtr buf,
+ 
+             if (cont->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI &&
+                 cont->idx == info->addr.pci.bus) {
++                contAlias = cont->info.alias;
+                 contIsPHB = virDomainControllerIsPSeriesPHB(cont);
+                 contTargetIndex = cont->opts.pciopts.targetIndex;
+ 
+-                /* When domain has builtin pci-root controller we don't put it
+-                 * onto cmd line. Therefore we can't set its alias. In that
+-                 * case, use the default one. */
+-                if (!qemuDomainIsPSeries(domainDef) &&
+-                    cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
+-                    if (virQEMUCapsHasPCIMultiBus(qemuCaps, domainDef))
+-                        contAlias = "pci.0";
+-                    else
+-                        contAlias = "pci";
+-                } else if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) {
+-                    contAlias = "pcie.0";
+-                } else {
+-                    contAlias = cont->info.alias;
+-                    if (!contAlias) {
+-                        virReportError(VIR_ERR_INTERNAL_ERROR,
+-                                       _("Device alias was not set for PCI "
+-                                         "controller with index %u required "
+-                                         "for device at address %s"),
+-                                       info->addr.pci.bus, devStr);
+-                        goto cleanup;
++                if (!contAlias) {
++                    virReportError(VIR_ERR_INTERNAL_ERROR,
++                                   _("Device alias was not set for PCI "
++                                     "controller with index %u required "
++                                     "for device at address %s"),
++                                   info->addr.pci.bus, devStr);
++                    goto cleanup;
++                }
++
++                if (virDomainDeviceAliasIsUserAlias(contAlias)) {
++                    /* When domain has builtin pci-root controller we don't put it
++                     * onto cmd line. Therefore we can't set its alias. In that
++                     * case, use the default one. */
++                    if (!qemuDomainIsPSeries(domainDef) &&
++                        cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
++                        if (virQEMUCapsHasPCIMultiBus(qemuCaps, domainDef))
++                            contAlias = "pci.0";
++                        else
++                            contAlias = "pci";
++                    } else if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) {
++                        contAlias = "pcie.0";
+                     }
+                 }
+                 break;
+-- 
+2.15.1
+

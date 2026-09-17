@@ -1,0 +1,60 @@
+From e58f9ff38cdf81aec5cb627575b0203ce41ab29b Mon Sep 17 00:00:00 2001
+Message-Id: <e58f9ff38cdf81aec5cb627575b0203ce41ab29b@dist-git>
+From: "xinhua.Cao" <caoxinhua@huawei.com>
+Date: Mon, 20 Aug 2018 10:09:00 -0400
+Subject: [PATCH] remote: Move the call to remoteClientFreePrivateCallbacks
+ from FreeFunc to CloseFunc
+
+RHEL 7.6 https://bugzilla.redhat.com/show_bug.cgi?id=1610612
+RHEL 7.5.z https://bugzilla.redhat.com/show_bug.cgi?id=1619206
+
+Still because of commit id 'fe8f1c8b' where we generate a REF for the
+Register and that's transparent to the consumer (e.g. how would they
+know they need to ensure that Deregister is called), thus the purpose of
+this patch is to find a way to Deregister if it's determined that the
+consumer hasn't by the time of the "last" REF we'd have.
+
+This solution to this problem is to alter the processing to have the
+remoteClientCloseFunc handle performing the Deregister calls instead of
+the remoteClientFreeFunc because there's no way FreeFunc would be called
+unless the Deregister was already called.
+
+(cherry picked from commit 1fd1b7661055577071aab36653eb8f2c2ddda804)
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+Reviewed-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ daemon/remote.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/daemon/remote.c b/daemon/remote.c
+index 70e1227f13..eb2f95f375 100644
+--- a/daemon/remote.c
++++ b/daemon/remote.c
+@@ -1737,11 +1737,9 @@ void remoteClientFreeFunc(void *data)
+ {
+     struct daemonClientPrivate *priv = data;
+ 
+-    /* Deregister event delivery callback */
+-    if (priv->conn) {
+-        remoteClientFreePrivateCallbacks(priv);
++    if (priv->conn)
+         virConnectClose(priv->conn);
+-    }
++
+     VIR_FREE(priv);
+ }
+ 
+@@ -1751,6 +1749,10 @@ static void remoteClientCloseFunc(virNetServerClientPtr client)
+     struct daemonClientPrivate *priv = virNetServerClientGetPrivateData(client);
+ 
+     daemonRemoveAllClientStreams(priv->streams);
++
++    /* Deregister event delivery callback */
++    if (priv->conn)
++        remoteClientFreePrivateCallbacks(priv);
+ }
+ 
+ 
+-- 
+2.18.0
+

@@ -1,0 +1,37 @@
+From 95cade1ca8bbf611fe14a80bd4cdd821c246ff74 Mon Sep 17 00:00:00 2001
+Message-Id: <95cade1ca8bbf611fe14a80bd4cdd821c246ff74@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 5 Feb 2018 17:57:36 +0100
+Subject: [PATCH] util: bitmap: Fix value of 'map_alloc' when shrinking bitmap
+
+The virBitmap code uses VIR_RESIZE_N to do quadratic scaling, which
+means that along with the number of requested map elements we also need
+to keep the number of actually allocated elements for the scaling
+algorithm to work properly.
+
+The shrinking code did not fix 'map_alloc' thus virResizeN might
+actually not expand the bitmap properly after called on a previously
+shrunk bitmap.
+
+(cherry picked from commit bf924e8e1be03982b0006e05b4faa3a645a45578)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1540817
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virbitmap.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index 33cae2f305..36ecc95deb 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -1231,5 +1231,6 @@ virBitmapShrink(virBitmapPtr map,
+         return -1;
+ 
+     map->map_len = nl;
++    map->map_alloc = nl;
+     return 0;
+ }
+-- 
+2.16.1
+

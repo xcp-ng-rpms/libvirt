@@ -1,0 +1,54 @@
+From f2dd85b3b81cd5c0842ffb55554c1a9cb5e8764b Mon Sep 17 00:00:00 2001
+Message-Id: <f2dd85b3b81cd5c0842ffb55554c1a9cb5e8764b@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:01 +0100
+Subject: [PATCH] conf: Improve error handling in virDomainChrDefFormat()
+
+We don't need to store the return value since we never modify it.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit be956c4e38770dd61998815bbea4b7c2fc38a7d6)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index d68a5f415c..cf1bd030a0 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -24028,8 +24028,6 @@ virDomainChrDefFormat(virBufferPtr buf,
+     const char *elementName = virDomainChrDeviceTypeToString(def->deviceType);
+     bool tty_compat;
+ 
+-    int ret = 0;
+-
+     if (!elementName) {
+         virReportError(VIR_ERR_INTERNAL_ERROR,
+                        _("unexpected char device type %d"),
+@@ -24050,14 +24048,14 @@ virDomainChrDefFormat(virBufferPtr buf,
+     virDomainChrSourceDefFormat(buf, def->source, flags);
+ 
+     if (virDomainChrTargetDefFormat(buf, def, flags) < 0)
+-       return -1;
++        return -1;
+ 
+     virDomainDeviceInfoFormat(buf, &def->info, flags);
+ 
+     virBufferAdjustIndent(buf, -2);
+     virBufferAsprintf(buf, "</%s>\n", elementName);
+ 
+-    return ret;
++    return 0;
+ }
+ 
+ static int
+-- 
+2.15.1
+

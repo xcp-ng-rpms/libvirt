@@ -1,0 +1,293 @@
+From 6c6f469f08a2fd5d61d91bf0488ade5ef0033f2d Mon Sep 17 00:00:00 2001
+Message-Id: <6c6f469f08a2fd5d61d91bf0488ade5ef0033f2d@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:13 +0100
+Subject: [PATCH] qemu: Support usb-serial and pci-serial on pSeries
+
+The existing implementation set the address type for all serial
+devices to spapr-vio, which made it impossible to use other devices
+such as usb-serial and pci-serial; moreover, some decisions were
+made based on the address type rather than the device type.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit b342e94399eee7fd519234a12ca3ea04f6564154)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c                            |  9 ------
+ src/qemu/qemu_domain_address.c                     |  3 +-
+ .../qemuxml2argv-pseries-serial-pci.args           | 22 +++++++++++++++
+ .../qemuxml2argv-pseries-serial-pci.xml            | 18 ++++++++++++
+ .../qemuxml2argv-pseries-serial-usb.args           | 23 ++++++++++++++++
+ .../qemuxml2argv-pseries-serial-usb.xml            | 21 ++++++++++++++
+ tests/qemuxml2argvtest.c                           |  7 +++++
+ .../qemuxml2xmlout-pseries-serial-pci.xml          | 31 +++++++++++++++++++++
+ .../qemuxml2xmlout-pseries-serial-usb.xml          | 32 ++++++++++++++++++++++
+ tests/qemuxml2xmltest.c                            |  7 +++++
+ 10 files changed, 163 insertions(+), 10 deletions(-)
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-pci.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-usb.xml
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 91083dc73d..056dafea39 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9260,15 +9260,6 @@ static bool
+ qemuChrIsPlatformDevice(const virDomainDef *def,
+                         virDomainChrDefPtr chr)
+ {
+-    if ((def->os.arch == VIR_ARCH_PPC) || ARCH_IS_PPC64(def->os.arch)) {
+-        if (!qemuDomainIsPSeries(def))
+-            return true;
+-        /* only pseries need -device spapr-vty with -chardev */
+-        if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
+-            chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO)
+-            return true;
+-    }
+-
+     if (def->os.arch == VIR_ARCH_ARMV7L || def->os.arch == VIR_ARCH_AARCH64) {
+         /* TARGET_TYPE_ISA here really means 'the default platform device' */
+         if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
+diff --git a/src/qemu/qemu_domain_address.c b/src/qemu/qemu_domain_address.c
+index 2319e503eb..f62bb2f97e 100644
+--- a/src/qemu/qemu_domain_address.c
++++ b/src/qemu/qemu_domain_address.c
+@@ -246,8 +246,9 @@ qemuDomainAssignSpaprVIOAddresses(virDomainDefPtr def,
+ 
+     for (i = 0; i < def->nserials; i++) {
+         if (def->serials[i]->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
+-            qemuDomainIsPSeries(def))
++            def->serials[i]->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO) {
+             def->serials[i]->info.type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO;
++        }
+         if (qemuDomainAssignSpaprVIOAddress(def, &def->serials[i]->info,
+                                             VIO_ADDR_SERIAL) < 0)
+             goto cleanup;
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.args
+new file mode 100644
+index 0000000000..eb2a9bf0e0
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.args
+@@ -0,0 +1,22 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-ppc64 \
++-name guest \
++-S \
++-M pseries \
++-m 512 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid 1ccfd97d-5eb4-478a-bbe6-88d254c16db7 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-guest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-chardev pty,id=charserial0 \
++-device pci-serial,chardev=charserial0,id=serial0,bus=pci.0,addr=0x1
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.xml
+new file mode 100644
+index 0000000000..2c2534b4c2
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-pci.xml
+@@ -0,0 +1,18 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- This will be assigned a PCI address -->
++    <serial type='pty'>
++      <target type='pci-serial'/>
++    </serial>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.args
+new file mode 100644
+index 0000000000..0403985dc4
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.args
+@@ -0,0 +1,23 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-ppc64 \
++-name guest \
++-S \
++-M pseries \
++-m 512 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid 1ccfd97d-5eb4-478a-bbe6-88d254c16db7 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-guest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-device qemu-xhci,id=usb,bus=pci.0,addr=0x1 \
++-chardev pty,id=charserial0 \
++-device usb-serial,chardev=charserial0,id=serial0,bus=usb.0,port=1
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.xml
+new file mode 100644
+index 0000000000..734c90c66f
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-usb.xml
+@@ -0,0 +1,21 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='qemu-xhci'/>
++    <!-- This should be assigned a USB address. You'll not be able to find it
++         in the file generated by qemuxml2xmltest due to limitations in the
++         test suite, but it will be there when actually running libvirt;
++         moreover, the USB address will be present in the .args file -->
++    <serial type='pty'>
++      <target type='usb-serial'/>
++    </serial>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 4b63dd141d..2b3bbd1b8b 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1884,6 +1884,13 @@ mymain(void)
+     DO_TEST("pseries-serial-compat",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial-pci",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_PCI_SERIAL);
++    DO_TEST("pseries-serial-usb",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_QEMU_XHCI,
++            QEMU_CAPS_DEVICE_USB_SERIAL);
+     DO_TEST("pseries-console-native",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_DEVICE_SPAPR_VTY);
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-pci.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-pci.xml
+new file mode 100644
+index 0000000000..cba7ea96bb
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-pci.xml
+@@ -0,0 +1,31 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <currentMemory unit='KiB'>524288</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' index='0' model='none'/>
++    <controller type='pci' index='0' model='pci-root'>
++      <model name='spapr-pci-host-bridge'/>
++      <target index='0'/>
++    </controller>
++    <serial type='pty'>
++      <target type='pci-serial' port='0'>
++        <model name='pci-serial'/>
++      </target>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x0'/>
++    </serial>
++    <memballoon model='none'/>
++    <panic model='pseries'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-usb.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-usb.xml
+new file mode 100644
+index 0000000000..34f651308d
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-usb.xml
+@@ -0,0 +1,32 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <currentMemory unit='KiB'>524288</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' index='0' model='qemu-xhci'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x0'/>
++    </controller>
++    <controller type='pci' index='0' model='pci-root'>
++      <model name='spapr-pci-host-bridge'/>
++      <target index='0'/>
++    </controller>
++    <serial type='pty'>
++      <target type='usb-serial' port='0'>
++        <model name='usb-serial'/>
++      </target>
++    </serial>
++    <memballoon model='none'/>
++    <panic model='pseries'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmltest.c b/tests/qemuxml2xmltest.c
+index ad429ead4d..f76bd5a68d 100644
+--- a/tests/qemuxml2xmltest.c
++++ b/tests/qemuxml2xmltest.c
+@@ -775,6 +775,13 @@ mymain(void)
+     DO_TEST("pseries-serial-compat",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial-pci",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_PCI_SERIAL);
++    DO_TEST("pseries-serial-usb",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_QEMU_XHCI,
++            QEMU_CAPS_DEVICE_USB_SERIAL);
+     DO_TEST("pseries-console-native",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_DEVICE_SPAPR_VTY);
+-- 
+2.15.1
+

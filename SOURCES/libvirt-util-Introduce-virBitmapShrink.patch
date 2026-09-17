@@ -1,0 +1,82 @@
+From e743acc0093fdb790509f64014ad8858ecfe0839 Mon Sep 17 00:00:00 2001
+Message-Id: <e743acc0093fdb790509f64014ad8858ecfe0839@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:16 +0100
+Subject: [PATCH] util: Introduce virBitmapShrink
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Sometimes the size of the bitmap matters and it might not be guessed correctly
+when parsing from some type of input.  For example virBitmapNewData() has Byte
+granularity, virBitmapNewString() has nibble granularity and so on.
+virBitmapParseUnlimited() can be tricked into creating huge bitmap that's not
+needed (e.g.: "0-2,^99999999").  This function provides a way to shrink the
+bitmap.  It is not supposed to free any memory.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit baca005367cf60743f67df44440fc316e6d20c19)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virbitmap.c     | 23 +++++++++++++++++++++++
+ src/util/virbitmap.h     |  2 ++
+ 3 files changed, 26 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 8cc8cbcc90..7dd4621b70 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1382,6 +1382,7 @@ virBitmapParseUnlimited;
+ virBitmapSetAll;
+ virBitmapSetBit;
+ virBitmapSetBitExpand;
++virBitmapShrink;
+ virBitmapSize;
+ virBitmapSubtract;
+ virBitmapToData;
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index 7338f0255a..b2c5c7a6a5 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -1196,3 +1196,26 @@ virBitmapSubtract(virBitmapPtr a,
+     for (i = 0; i < max; i++)
+         a->map[i] &= ~b->map[i];
+ }
++
++
++/**
++ * virBitmapShrink:
++ * @map: Pointer to bitmap
++ * @b: last bit position to be excluded from bitmap
++ *
++ * Resizes the bitmap so that no more than @b bits will fit into it.  Nothing
++ * will change if the size is already smaller than @b.
++ *
++ * NB: Does not adjust the map->map_len so that a subsequent virBitmapExpand
++ * doesn't necessarily need to reallocate.
++ */
++void
++virBitmapShrink(virBitmapPtr map,
++                size_t b)
++{
++    if (!map)
++        return;
++
++    if (map->max_bit >= b)
++        map->max_bit = b;
++}
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index 7b2bea8b53..2464814055 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -153,4 +153,6 @@ void virBitmapIntersect(virBitmapPtr a, virBitmapPtr b)
+ void virBitmapSubtract(virBitmapPtr a, virBitmapPtr b)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+ 
++void virBitmapShrink(virBitmapPtr map, size_t b);
++
+ #endif
+-- 
+2.16.1
+

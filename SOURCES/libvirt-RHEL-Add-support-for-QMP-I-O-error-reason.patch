@@ -1,0 +1,52 @@
+From 039a4ec94aca6cb2226161de49e4b8a7c53f8321 Mon Sep 17 00:00:00 2001
+Message-Id: <039a4ec94aca6cb2226161de49e4b8a7c53f8321@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Thu, 9 Oct 2014 10:38:39 +0200
+Subject: [PATCH] RHEL: Add support for QMP I/O error reason
+
+RHEL-only
+
+Adds support for __com.redhat_reason on I/O error events. The code will
+fallback to upstream nospace boolean if the reason is not present and
+complain if neither of these is found.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1119784
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_monitor_json.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/qemu/qemu_monitor_json.c b/src/qemu/qemu_monitor_json.c
+index e0f942788d..a1fa37e1e9 100644
+--- a/src/qemu/qemu_monitor_json.c
++++ b/src/qemu/qemu_monitor_json.c
+@@ -641,7 +641,7 @@ qemuMonitorJSONHandleIOError(qemuMonitorPtr mon, virJSONValuePtr data)
+ {
+     const char *device;
+     const char *action;
+-    const char *reason = "";
++    const char *reason;
+     bool nospc = false;
+     int actionID;
+ 
+@@ -657,8 +657,14 @@ qemuMonitorJSONHandleIOError(qemuMonitorPtr mon, virJSONValuePtr data)
+     if ((device = virJSONValueObjectGetString(data, "device")) == NULL)
+         VIR_WARN("missing device in disk io error event");
+ 
+-    if (virJSONValueObjectGetBoolean(data, "nospace", &nospc) == 0 && nospc)
+-        reason = "enospc";
++    reason = virJSONValueObjectGetString(data, "__com.redhat_reason");
++    if (!reason) {
++        if (virJSONValueObjectGetBoolean(data, "nospace", &nospc) != 0) {
++            VIR_WARN("neither __com.redhat_reason nor nospace found in disk "
++                     "io error event");
++        }
++        reason = nospc ? "enospc" : "";
++    }
+ 
+     if ((actionID = qemuMonitorIOErrorActionTypeFromString(action)) < 0) {
+         VIR_WARN("unknown disk io error action '%s'", action);
+-- 
+2.14.3
+

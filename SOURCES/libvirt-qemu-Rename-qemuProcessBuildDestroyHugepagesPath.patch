@@ -1,0 +1,174 @@
+From aa138f5b99f7a05efee017401116d9513cb34b5e Mon Sep 17 00:00:00 2001
+Message-Id: <aa138f5b99f7a05efee017401116d9513cb34b5e@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Thu, 9 Nov 2017 16:06:45 +0100
+Subject: [PATCH] qemu: Rename qemuProcessBuildDestroyHugepagesPath
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1461214
+
+At the same time, move its internals into a separate function so
+that they can be reused.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit eff2b2edb147572b6d8f701f4b4f4a69580e17c8)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_hotplug.c |  2 +-
+ src/qemu/qemu_process.c | 76 +++++++++++++++++++++++++++++--------------------
+ src/qemu/qemu_process.h |  8 +++---
+ 3 files changed, 50 insertions(+), 36 deletions(-)
+
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index 91f7f9ed62..5701c033be 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -2077,7 +2077,7 @@ qemuDomainAttachMemory(virQEMUDriverPtr driver,
+                                   priv->qemuCaps, vm->def, mem, NULL, true) < 0)
+         goto cleanup;
+ 
+-    if (qemuProcessBuildDestroyHugepagesPath(driver, vm, mem, true) < 0)
++    if (qemuProcessBuildDestroyMemoryPaths(driver, vm, mem, true) < 0)
+         goto cleanup;
+ 
+     if (qemuDomainNamespaceSetupMemory(driver, vm, mem) < 0)
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index fdc868912c..605f280d0c 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -3324,11 +3324,45 @@ qemuProcessNeedHugepagesPath(virDomainDefPtr def,
+ }
+ 
+ 
++static int
++qemuProcessBuildDestroyMemoryPathsImpl(virQEMUDriverPtr driver,
++                                       virDomainDefPtr def,
++                                       const char *path,
++                                       bool build)
++{
++    if (build) {
++        if (virFileExists(path))
++            return 0;
++
++        if (virFileMakePathWithMode(path, 0700) < 0) {
++            virReportSystemError(errno,
++                                 _("Unable to create %s"),
++                                 path);
++            return -1;
++        }
++
++        if (qemuSecurityDomainSetPathLabel(driver->securityManager,
++                                           def, path) < 0) {
++            virReportError(VIR_ERR_INTERNAL_ERROR,
++                            _("Unable to label %s"), path);
++            return -1;
++        }
++    } else {
++        if (rmdir(path) < 0 &&
++            errno != ENOENT)
++            VIR_WARN("Unable to remove hugepage path: %s (errno=%d)",
++                     path, errno);
++    }
++
++    return 0;
++}
++
++
+ int
+-qemuProcessBuildDestroyHugepagesPath(virQEMUDriverPtr driver,
+-                                     virDomainObjPtr vm,
+-                                     virDomainMemoryDefPtr mem,
+-                                     bool build)
++qemuProcessBuildDestroyMemoryPaths(virQEMUDriverPtr driver,
++                                   virDomainObjPtr vm,
++                                   virDomainMemoryDefPtr mem,
++                                   bool build)
+ {
+     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
+     char *hugepagePath = NULL;
+@@ -3347,31 +3381,11 @@ qemuProcessBuildDestroyHugepagesPath(virQEMUDriverPtr driver,
+             if (!hugepagePath)
+                 goto cleanup;
+ 
+-            if (build) {
+-                if (virFileExists(hugepagePath)) {
+-                    ret = 0;
+-                    goto cleanup;
+-                }
++            if (qemuProcessBuildDestroyMemoryPathsImpl(driver, vm->def,
++                                                       hugepagePath, build) < 0)
++                goto cleanup;
+ 
+-                if (virFileMakePathWithMode(hugepagePath, 0700) < 0) {
+-                    virReportSystemError(errno,
+-                                         _("Unable to create %s"),
+-                                         hugepagePath);
+-                    goto cleanup;
+-                }
+-
+-                if (qemuSecurityDomainSetPathLabel(driver->securityManager,
+-                                                   vm->def, hugepagePath) < 0) {
+-                    virReportError(VIR_ERR_INTERNAL_ERROR,
+-                                   "%s", _("Unable to set huge path in security driver"));
+-                    goto cleanup;
+-                }
+-            } else {
+-                if (rmdir(hugepagePath) < 0 &&
+-                    errno != ENOENT)
+-                    VIR_WARN("Unable to remove hugepage path: %s (errno=%d)",
+-                             hugepagePath, errno);
+-            }
++            VIR_FREE(hugepagePath);
+         }
+     }
+ 
+@@ -5550,7 +5564,7 @@ qemuProcessPrepareHost(virQEMUDriverPtr driver,
+                                NULL) < 0)
+         goto cleanup;
+ 
+-    if (qemuProcessBuildDestroyHugepagesPath(driver, vm, NULL, true) < 0)
++    if (qemuProcessBuildDestroyMemoryPaths(driver, vm, NULL, true) < 0)
+         goto cleanup;
+ 
+     /* Ensure no historical cgroup for this VM is lying around bogus
+@@ -6254,7 +6268,7 @@ void qemuProcessStop(virQEMUDriverPtr driver,
+         goto endjob;
+     }
+ 
+-    qemuProcessBuildDestroyHugepagesPath(driver, vm, NULL, false);
++    qemuProcessBuildDestroyMemoryPaths(driver, vm, NULL, false);
+ 
+     vm->def->id = -1;
+ 
+@@ -7112,7 +7126,7 @@ qemuProcessReconnect(void *opaque)
+         goto cleanup;
+     }
+ 
+-    if (qemuProcessBuildDestroyHugepagesPath(driver, obj, NULL, true) < 0)
++    if (qemuProcessBuildDestroyMemoryPaths(driver, obj, NULL, true) < 0)
+         goto error;
+ 
+     if ((qemuDomainAssignAddresses(obj->def, priv->qemuCaps,
+diff --git a/src/qemu/qemu_process.h b/src/qemu/qemu_process.h
+index 814b86d8a7..cd9a720313 100644
+--- a/src/qemu/qemu_process.h
++++ b/src/qemu/qemu_process.h
+@@ -38,10 +38,10 @@ int qemuProcessStopCPUs(virQEMUDriverPtr driver,
+                         virDomainPausedReason reason,
+                         qemuDomainAsyncJob asyncJob);
+ 
+-int qemuProcessBuildDestroyHugepagesPath(virQEMUDriverPtr driver,
+-                                         virDomainObjPtr vm,
+-                                         virDomainMemoryDefPtr mem,
+-                                         bool build);
++int qemuProcessBuildDestroyMemoryPaths(virQEMUDriverPtr driver,
++                                       virDomainObjPtr vm,
++                                       virDomainMemoryDefPtr mem,
++                                       bool build);
+ 
+ void qemuProcessAutostartAll(virQEMUDriverPtr driver);
+ void qemuProcessReconnectAll(virConnectPtr conn, virQEMUDriverPtr driver);
+-- 
+2.15.0
+

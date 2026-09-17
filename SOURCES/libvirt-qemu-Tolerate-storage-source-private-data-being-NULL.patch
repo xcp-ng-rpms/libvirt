@@ -1,0 +1,125 @@
+From aa56a230d346174047f4d21b127bdbea52a1ce3c Mon Sep 17 00:00:00 2001
+Message-Id: <aa56a230d346174047f4d21b127bdbea52a1ce3c@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 13 Nov 2017 13:43:21 +0100
+Subject: [PATCH] qemu: Tolerate storage source private data being NULL
+
+In some cases it does not make sense to pursue that the private data
+will be allocated (especially when we don't need to put anything in it).
+
+Ensure that the code works without it.
+
+This also fixes few crashes pointed out in
+https://bugzilla.redhat.com/show_bug.cgi?id=1510323
+
+(cherry picked from commit 8056721cbb75a717604a1f7971440726d9d85045)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c | 18 ++++++++++++++----
+ src/qemu/qemu_hotplug.c | 17 ++++++++++++-----
+ 2 files changed, 26 insertions(+), 9 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index f8eb59884c..e60f93083f 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -1362,12 +1362,17 @@ qemuBuildDriveSourceStr(virDomainDiskDefPtr disk,
+ {
+     int actualType = virStorageSourceGetActualType(disk->src);
+     qemuDomainStorageSourcePrivatePtr srcpriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
+-    qemuDomainSecretInfoPtr secinfo = srcpriv->secinfo;
+-    qemuDomainSecretInfoPtr encinfo = srcpriv->encinfo;
++    qemuDomainSecretInfoPtr secinfo = NULL;
++    qemuDomainSecretInfoPtr encinfo = NULL;
+     virJSONValuePtr srcprops = NULL;
+     char *source = NULL;
+     int ret = -1;
+ 
++    if (srcpriv) {
++        secinfo = srcpriv->secinfo;
++        encinfo = srcpriv->encinfo;
++    }
++
+     if (qemuDiskSourceNeedsProps(disk->src) &&
+         !(srcprops = qemuDiskSourceGetProps(disk->src)))
+         goto cleanup;
+@@ -2239,8 +2244,13 @@ qemuBuildDiskDriveCommandLine(virCommandPtr cmd,
+         bool driveBoot = false;
+         virDomainDiskDefPtr disk = def->disks[i];
+         qemuDomainStorageSourcePrivatePtr srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
+-        qemuDomainSecretInfoPtr secinfo = srcPriv->secinfo;
+-        qemuDomainSecretInfoPtr encinfo = srcPriv->encinfo;
++        qemuDomainSecretInfoPtr secinfo = NULL;
++        qemuDomainSecretInfoPtr encinfo = NULL;
++
++        if (srcPriv) {
++            secinfo = srcPriv->secinfo;
++            encinfo = srcPriv->encinfo;
++        }
+ 
+         if (disk->info.bootIndex) {
+             bootindex = disk->info.bootIndex;
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index 5701c033be..edf07d0b65 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -259,6 +259,7 @@ qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
+     qemuDomainObjPrivatePtr priv = vm->privateData;
+     qemuDomainDiskPrivatePtr diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+     qemuDomainStorageSourcePrivatePtr srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
++    qemuDomainSecretInfoPtr secinfo = NULL;
+     const char *format = NULL;
+     char *sourcestr = NULL;
+ 
+@@ -268,6 +269,9 @@ qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
+         goto cleanup;
+     }
+ 
++    if (srcPriv)
++        secinfo = srcPriv->secinfo;
++
+     if (disk->device != VIR_DOMAIN_DISK_DEVICE_FLOPPY &&
+         disk->device != VIR_DOMAIN_DISK_DEVICE_CDROM) {
+         virReportError(VIR_ERR_INTERNAL_ERROR,
+@@ -300,7 +304,7 @@ qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
+     }
+ 
+     if (!virStorageSourceIsEmpty(newsrc)) {
+-        if (qemuGetDriveSourceString(newsrc, srcPriv->secinfo, &sourcestr) < 0)
++        if (qemuGetDriveSourceString(newsrc, secinfo, &sourcestr) < 0)
+             goto error;
+ 
+         if (virStorageSourceGetActualType(newsrc) != VIR_STORAGE_TYPE_DIR) {
+@@ -371,8 +375,8 @@ qemuDomainAttachDiskGeneric(virConnectPtr conn,
+     virJSONValuePtr secobjProps = NULL;
+     virJSONValuePtr encobjProps = NULL;
+     qemuDomainStorageSourcePrivatePtr srcPriv;
+-    qemuDomainSecretInfoPtr secinfo;
+-    qemuDomainSecretInfoPtr encinfo;
++    qemuDomainSecretInfoPtr secinfo = NULL;
++    qemuDomainSecretInfoPtr encinfo = NULL;
+ 
+     if (qemuDomainPrepareDisk(driver, vm, disk, NULL, false) < 0)
+         goto cleanup;
+@@ -384,13 +388,16 @@ qemuDomainAttachDiskGeneric(virConnectPtr conn,
+         goto error;
+ 
+     srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
+-    secinfo = srcPriv->secinfo;
++    if (srcPriv) {
++        secinfo = srcPriv->secinfo;
++        encinfo = srcPriv->encinfo;
++    }
++
+     if (secinfo && secinfo->type == VIR_DOMAIN_SECRET_INFO_TYPE_AES) {
+         if (qemuBuildSecretInfoProps(secinfo, &secobjProps) < 0)
+             goto error;
+     }
+ 
+-    encinfo = srcPriv->encinfo;
+     if (encinfo && qemuBuildSecretInfoProps(encinfo, &encobjProps) < 0)
+         goto error;
+ 
+-- 
+2.15.0
+

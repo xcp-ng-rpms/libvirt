@@ -1,0 +1,200 @@
+From 4ab9c0ceda884c08553ebca52ab24a9de0971251 Mon Sep 17 00:00:00 2001
+Message-Id: <4ab9c0ceda884c08553ebca52ab24a9de0971251@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:18 +0100
+Subject: [PATCH] qemu: Require QEMU_CAPS_DEVICE_ISA_SERIAL for isa-serial
+
+We should make sure the isa-serial device is available before
+formatting it on the QEMU command line.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit b9be657b6807ddab3d4872723f4d5e53f8f49b01)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c  |  7 +++----
+ tests/qemuxml2argvtest.c | 29 +++++++++++++++++++++++++++--
+ 2 files changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index a2cfb3d4a3..5c246698c0 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9223,6 +9223,8 @@ static virQEMUCapsFlags
+ qemuChrSerialTargetModelToCaps(virDomainChrSerialTargetModel targetModel)
+ {
+     switch (targetModel) {
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
++        return QEMU_CAPS_DEVICE_ISA_SERIAL;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+         return QEMU_CAPS_DEVICE_USB_SERIAL;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+@@ -9233,7 +9235,6 @@ qemuChrSerialTargetModelToCaps(virDomainChrSerialTargetModel targetModel)
+         return QEMU_CAPS_DEVICE_SCLPCONSOLE;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
+         return QEMU_CAPS_DEVICE_SCLPLMCONSOLE;
+-    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+@@ -10356,6 +10357,7 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+     virQEMUCapsFlags caps;
+ 
+     switch ((virDomainChrSerialTargetModel) serial->targetModel) {
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
+@@ -10372,9 +10374,6 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+         }
+         break;
+ 
+-    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+-        break;
+-
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 852525e7b4..b61cee74c7 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -771,6 +771,7 @@ mymain(void)
+     DO_TEST_FAILURE("reboot-timeout-enabled", NONE);
+ 
+     DO_TEST("bios",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_SGA);
+     DO_TEST("bios-nvram", NONE);
+     DO_TEST("bios-nvram-secure",
+@@ -814,6 +815,7 @@ mymain(void)
+             QEMU_CAPS_SPICE,
+             QEMU_CAPS_HDA_DUPLEX,
+             QEMU_CAPS_USB_HUB,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_DEVICE_CIRRUS_VGA);
+     DO_TEST("eoi-disabled", NONE);
+     DO_TEST("eoi-enabled", NONE);
+@@ -1231,48 +1233,64 @@ mymain(void)
+ 
+     DO_TEST("serial-file-log",
+             QEMU_CAPS_CHARDEV_FILE_APPEND,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_CHARDEV_LOGFILE);
+     DO_TEST("serial-spiceport",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_DEVICE_VIDEO_PRIMARY,
+             QEMU_CAPS_DEVICE_QXL,
+             QEMU_CAPS_SPICE,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_CHARDEV_SPICEPORT);
+     DO_TEST("serial-spiceport-nospice", NONE);
+ 
+-    DO_TEST("console-compat", NONE);
+-    DO_TEST("console-compat-auto", NONE);
++    DO_TEST("console-compat",
++            QEMU_CAPS_DEVICE_ISA_SERIAL);
++    DO_TEST("console-compat-auto",
++            QEMU_CAPS_DEVICE_ISA_SERIAL);
+ 
+     DO_TEST("serial-vc-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-pty-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-dev-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-dev-chardev-iobase",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-file-chardev",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_CHARDEV_FILE_APPEND);
+     DO_TEST("serial-unix-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-tcp-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-udp-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("serial-tcp-telnet-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     driver.config->chardevTLS = 1;
+     DO_TEST("serial-tcp-tlsx509-chardev",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_OBJECT_TLS_CREDS_X509);
+     driver.config->chardevTLSx509verify = 1;
+     DO_TEST("serial-tcp-tlsx509-chardev-verify",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_OBJECT_TLS_CREDS_X509);
+     driver.config->chardevTLSx509verify = 0;
+     DO_TEST("serial-tcp-tlsx509-chardev-notls",
+             QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_OBJECT_TLS_CREDS_X509);
+     VIR_FREE(driver.config->chardevTLSx509certdir);
+     if (VIR_STRDUP_QUIET(driver.config->chardevTLSx509certdir, "/etc/pki/libvirt-chardev") < 0)
+@@ -1284,22 +1302,26 @@ mymain(void)
+     DO_TEST("serial-tcp-tlsx509-secret-chardev",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_OBJECT_SECRET,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_OBJECT_TLS_CREDS_X509);
+ # else
+     DO_TEST_FAILURE("serial-tcp-tlsx509-secret-chardev",
+                     QEMU_CAPS_NODEFCONFIG,
+                     QEMU_CAPS_OBJECT_SECRET,
++                    QEMU_CAPS_DEVICE_ISA_SERIAL,
+                     QEMU_CAPS_OBJECT_TLS_CREDS_X509);
+ # endif
+     driver.config->chardevTLS = 0;
+     VIR_FREE(driver.config->chardevTLSx509certdir);
+     DO_TEST("serial-many-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("parallel-tcp-chardev",
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("parallel-parport-chardev",
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("console-compat-chardev",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("pci-serial-dev-chardev",
+             QEMU_CAPS_NODEFCONFIG,
+@@ -1320,6 +1342,7 @@ mymain(void)
+     DO_TEST("console-virtio",
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("console-virtio-many",
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("console-virtio-s390",
+             QEMU_CAPS_NODEFCONFIG,
+@@ -2310,6 +2333,7 @@ mymain(void)
+             QEMU_CAPS_CHARDEV_SPICEVMC,
+             QEMU_CAPS_DEVICE_QXL,
+             QEMU_CAPS_HDA_DUPLEX,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_USB_REDIR);
+ 
+     /* Test automatic and manual setting of pcie-root-port attributes */
+@@ -2907,6 +2931,7 @@ mymain(void)
+     DO_TEST("user-aliases", QEMU_CAPS_KVM, QEMU_CAPS_DEVICE_CIRRUS_VGA,
+             QEMU_CAPS_OBJECT_MEMORY_FILE, QEMU_CAPS_PIIX_DISABLE_S3,
+             QEMU_CAPS_PIIX_DISABLE_S4, QEMU_CAPS_VNC,
++            QEMU_CAPS_DEVICE_ISA_SERIAL,
+             QEMU_CAPS_HDA_DUPLEX);
+     DO_TEST("user-aliases2", QEMU_CAPS_DEVICE_IOH3420, QEMU_CAPS_ICH9_AHCI);
+ 
+-- 
+2.15.1
+

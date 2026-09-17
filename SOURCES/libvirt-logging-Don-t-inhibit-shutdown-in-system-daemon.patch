@@ -1,0 +1,47 @@
+From 601fbd22bbf812cb0ef60b039fc8214dadbdffaa Mon Sep 17 00:00:00 2001
+Message-Id: <601fbd22bbf812cb0ef60b039fc8214dadbdffaa@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Tue, 1 May 2018 15:54:22 +0200
+Subject: [PATCH] logging: Don't inhibit shutdown in system daemon
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+That is a job of libvirtd and virtlogd has a dependency on it, so that will
+prevent it properly.  Doing it one extra time in virtlogd might also cause AVC
+denials because it is not allowed to call that dbus method.
+
+Caused by commit df34363d58bb.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1547250
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit f94e5b215720c91c60219f1694783a603f0b619c)
+
+https: //bugzilla.redhat.com/show_bug.cgi?id=1573268
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+---
+ src/logging/log_daemon.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/logging/log_daemon.c b/src/logging/log_daemon.c
+index 5a136c59d1..b00b37878a 100644
+--- a/src/logging/log_daemon.c
++++ b/src/logging/log_daemon.c
+@@ -129,6 +129,12 @@ virLogDaemonInhibitor(bool inhibit, void *opaque)
+ {
+     virLogDaemonPtr dmn = opaque;
+ 
++    /* virtlogd uses inhibition only to stop session daemon being killed after
++     * the specified timeout, for the system daemon this is taken care of by
++     * libvirtd and the dependencies between the services. */
++    if (virNetDaemonIsPrivileged(dmn->dmn))
++        return;
++
+     if (inhibit)
+         virNetDaemonAddShutdownInhibition(dmn->dmn);
+     else
+-- 
+2.17.1
+

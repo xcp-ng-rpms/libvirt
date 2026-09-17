@@ -1,0 +1,43 @@
+From e3521dc836329e941d3d7bea0bcac1b0731162a5 Mon Sep 17 00:00:00 2001
+Message-Id: <e3521dc836329e941d3d7bea0bcac1b0731162a5@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Mon, 5 Feb 2018 13:39:19 +0100
+Subject: [PATCH] util: Check if kernel-provided info is consistent with itself
+
+Just in case someone re-mounted /sys/fs/resctrl with different mount
+options (cdp), add a check here.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1540780
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit d300b5448721970962efc18c3b3b0a358f2359ab)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index ef388757a7..6860e86e64 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -941,6 +941,17 @@ virResctrlAllocParseProcessCache(virResctrlInfoPtr resctrl,
+     if (!mask)
+         return -1;
+ 
++    if (!resctrl ||
++        level >= resctrl->nlevels ||
++        !resctrl->levels[level] ||
++        !resctrl->levels[level]->types[type]) {
++        virReportError(VIR_ERR_INTERNAL_ERROR,
++                       _("Missing or inconsistent resctrl info for "
++                         "level '%ud' type '%s'"),
++                       level, virCacheTypeToString(type));
++        goto cleanup;
++    }
++
+     if (virBitmapShrink(mask, resctrl->levels[level]->types[type]->bits) < 0)
+         goto cleanup;
+ 
+-- 
+2.16.1
+
