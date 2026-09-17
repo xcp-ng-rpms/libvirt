@@ -220,7 +220,8 @@
 # RHEL releases provide stable tool chains and so it is safe to turn
 # compiler warning into errors without being worried about frequent
 # changes in reported warnings
-%if 0%{?rhel}
+# XCP: TODO: Don't relax warning as errors
+%if 0
     %define enable_werror --enable-werror
 %else
     %define enable_werror --disable-werror
