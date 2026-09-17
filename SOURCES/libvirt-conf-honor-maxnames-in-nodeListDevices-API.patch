@@ -1,0 +1,36 @@
+From a64f825a244c77556c0ed7c5f425ba70b28cca70 Mon Sep 17 00:00:00 2001
+Message-Id: <a64f825a244c77556c0ed7c5f425ba70b28cca70@dist-git>
+From: Pavel Hrdina <phrdina@redhat.com>
+Date: Tue, 2 Jan 2018 12:39:13 +0100
+Subject: [PATCH] conf: honor maxnames in nodeListDevices API
+
+Introduced by commit <4ae9dbea99c>.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1528572
+
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit bbf6573e94528ac8a8867855e6671b48e13f1cd1)
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/virnodedeviceobj.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/conf/virnodedeviceobj.c b/src/conf/virnodedeviceobj.c
+index 872ec1fd4b..c4e3a40d3a 100644
+--- a/src/conf/virnodedeviceobj.c
++++ b/src/conf/virnodedeviceobj.c
+@@ -798,6 +798,9 @@ virNodeDeviceObjListGetNamesCallback(void *payload,
+     if (data->error)
+         return 0;
+ 
++    if (data->nnames >= data->maxnames)
++        return 0;
++
+     virObjectLock(obj);
+     def = obj->def;
+ 
+-- 
+2.15.1
+

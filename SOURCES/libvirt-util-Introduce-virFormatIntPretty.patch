@@ -1,0 +1,114 @@
+From 155bc6e4428d2a01a1b63f0a4221211c2116e893 Mon Sep 17 00:00:00 2001
+Message-Id: <155bc6e4428d2a01a1b63f0a4221211c2116e893@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:09 +0100
+Subject: [PATCH] util: Introduce virFormatIntPretty
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+We can't output better memory sizes if we want to be compatible with libvirt
+older than the one which introduced /memory/unit, but for new things we can just
+output nicer capacity to the user if available.  And this function enables that.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 87a8a30d613dd2061377aa46fa6e9a05e12aa1b4)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virutil.c       | 51 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/util/virutil.h       |  4 ++++
+ 3 files changed, 56 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 57999e77b0..5a87276a2e 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -2938,6 +2938,7 @@ virDoubleToStr;
+ virEnumFromString;
+ virEnumToString;
+ virFormatIntDecimal;
++virFormatIntPretty;
+ virGetDeviceID;
+ virGetDeviceUnprivSGIO;
+ virGetEnvAllowSUID;
+diff --git a/src/util/virutil.c b/src/util/virutil.c
+index 170e921920..2379cf019d 100644
+--- a/src/util/virutil.c
++++ b/src/util/virutil.c
+@@ -485,6 +485,57 @@ virFormatIntDecimal(char *buf, size_t buflen, int val)
+ }
+ 
+ 
++/**
++ * virFormatIntPretty
++ *
++ * @val: Value in bytes to be shortened
++ * @unit: unit to be used
++ *
++ * Similar to vshPrettyCapacity, but operates on integers and not doubles
++ *
++ * Returns shortened value that can be used with @unit.
++ */
++unsigned long long
++virFormatIntPretty(unsigned long long val,
++                   const char **unit)
++{
++    unsigned long long limit = 1024;
++
++    if (val % limit || val == 0) {
++        *unit = "B";
++        return val;
++    }
++    limit *= 1024;
++    if (val % limit) {
++        *unit = "KiB";
++        return val / (limit / 1024);
++    }
++    limit *= 1024;
++    if (val % limit) {
++        *unit = "MiB";
++        return val / (limit / 1024);
++    }
++    limit *= 1024;
++    if (val % limit) {
++        *unit = "GiB";
++        return val / (limit / 1024);
++    }
++    limit *= 1024;
++    if (val % limit) {
++        *unit = "TiB";
++        return val / (limit / 1024);
++    }
++    limit *= 1024;
++    if (val % limit) {
++        *unit = "PiB";
++        return val / (limit / 1024);
++    }
++    limit *= 1024;
++    *unit = "EiB";
++    return val / (limit / 1024);
++}
++
++
+ const char *virEnumToString(const char *const*types,
+                             unsigned int ntypes,
+                             int type)
+diff --git a/src/util/virutil.h b/src/util/virutil.h
+index a862a8a637..9ee728235f 100644
+--- a/src/util/virutil.h
++++ b/src/util/virutil.h
+@@ -66,6 +66,10 @@ int virParseVersionString(const char *str, unsigned long *version,
+ char *virFormatIntDecimal(char *buf, size_t buflen, int val)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
+ 
++unsigned long long
++virFormatIntPretty(unsigned long long val,
++                   const char **unit);
++
+ int virDiskNameParse(const char *name, int *disk, int *partition);
+ int virDiskNameToIndex(const char* str);
+ char *virIndexToDiskName(int idx, const char *prefix);
+-- 
+2.16.1
+

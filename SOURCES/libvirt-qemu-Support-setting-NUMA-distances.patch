@@ -1,0 +1,259 @@
+From da9b2f15ee80396d542057340a576cf65828191a Mon Sep 17 00:00:00 2001
+Message-Id: <da9b2f15ee80396d542057340a576cf65828191a@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 4 Dec 2017 13:38:52 +0100
+Subject: [PATCH] qemu: Support setting NUMA distances
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+Since we already have such support for libxl all we need is qemu
+driver adjustment. And a test case.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 97a051f0f80ec076f3ff48ef830236675f128ade)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in                          |  2 +-
+ src/qemu/qemu_command.c                            | 39 ++++++++++++-
+ .../qemuxml2argv-numatune-distances.args           | 63 +++++++++++++++++++++
+ .../qemuxml2argv-numatune-distances.xml            | 65 ++++++++++++++++++++++
+ tests/qemuxml2argvtest.c                           |  2 +
+ 5 files changed, 169 insertions(+), 2 deletions(-)
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.xml
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index a5adf5d9aa..cc1c5577cd 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -1589,7 +1589,7 @@
+ 
+     <p>
+       Describing distances between NUMA cells is currently only supported
+-      by Xen. If no <code>distances</code> are given to describe
++      by Xen and QEMU. If no <code>distances</code> are given to describe
+       the SLIT data between different cells, it will default to a scheme
+       using 10 for local and 20 for remote distances.
+     </p>
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 18977480d9..624a50d0b3 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -7807,7 +7807,7 @@ qemuBuildNumaArgStr(virQEMUDriverConfigPtr cfg,
+                     virCommandPtr cmd,
+                     qemuDomainObjPrivatePtr priv)
+ {
+-    size_t i;
++    size_t i, j;
+     virQEMUCapsPtr qemuCaps = priv->qemuCaps;
+     virBuffer buf = VIR_BUFFER_INITIALIZER;
+     char *cpumask = NULL, *tmpmask = NULL, *next = NULL;
+@@ -7817,6 +7817,7 @@ qemuBuildNumaArgStr(virQEMUDriverConfigPtr cfg,
+     int ret = -1;
+     size_t ncells = virDomainNumaGetNodeCount(def->numa);
+     const long system_page_size = virGetSystemPageSizeKB();
++    bool numa_distances = false;
+ 
+     if (virDomainNumatuneHasPerNodeBinding(def->numa) &&
+         !(virQEMUCapsGet(qemuCaps, QEMU_CAPS_OBJECT_MEMORY_RAM) ||
+@@ -7925,6 +7926,42 @@ qemuBuildNumaArgStr(virQEMUDriverConfigPtr cfg,
+ 
+         virCommandAddArgBuffer(cmd, &buf);
+     }
++
++    /* If NUMA node distance is specified for at least one pair
++     * of nodes, we have to specify all the distances. Even
++     * though they might be the default ones. */
++    for (i = 0; i < ncells; i++) {
++        for (j = 0; j < ncells; j++) {
++            if (virDomainNumaNodeDistanceIsUsingDefaults(def->numa, i, j))
++                continue;
++
++            numa_distances = true;
++            break;
++        }
++        if (numa_distances)
++            break;
++    }
++
++    if (numa_distances) {
++        if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_NUMA_DIST)) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                           _("setting NUMA distances is not "
++                             "supported with this qemu"));
++            goto cleanup;
++        }
++
++        for (i = 0; i < ncells; i++) {
++            for (j = 0; j < ncells; j++) {
++                size_t distance = virDomainNumaGetNodeDistance(def->numa, i, j);
++
++                virCommandAddArg(cmd, "-numa");
++                virBufferAsprintf(&buf, "dist,src=%zu,dst=%zu,val=%zu", i, j, distance);
++
++                virCommandAddArgBuffer(cmd, &buf);
++            }
++        }
++    }
++
+     ret = 0;
+ 
+  cleanup:
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.args b/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.args
+new file mode 100644
+index 0000000000..23b66246c7
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.args
+@@ -0,0 +1,63 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-x86_64 \
++-name QEMUGuest \
++-S \
++-M xenfv \
++-m 12288 \
++-smp 12,sockets=12,cores=1,threads=1 \
++-numa node,nodeid=0,cpus=0,cpus=11,mem=2048 \
++-numa node,nodeid=1,cpus=1,cpus=10,mem=2048 \
++-numa node,nodeid=2,cpus=2,cpus=9,mem=2048 \
++-numa node,nodeid=3,cpus=3,cpus=8,mem=2048 \
++-numa node,nodeid=4,cpus=4,cpus=7,mem=2048 \
++-numa node,nodeid=5,cpus=5-6,mem=2048 \
++-numa dist,src=0,dst=0,val=10 \
++-numa dist,src=0,dst=1,val=21 \
++-numa dist,src=0,dst=2,val=31 \
++-numa dist,src=0,dst=3,val=41 \
++-numa dist,src=0,dst=4,val=51 \
++-numa dist,src=0,dst=5,val=61 \
++-numa dist,src=1,dst=0,val=21 \
++-numa dist,src=1,dst=1,val=10 \
++-numa dist,src=1,dst=2,val=21 \
++-numa dist,src=1,dst=3,val=31 \
++-numa dist,src=1,dst=4,val=41 \
++-numa dist,src=1,dst=5,val=51 \
++-numa dist,src=2,dst=0,val=31 \
++-numa dist,src=2,dst=1,val=21 \
++-numa dist,src=2,dst=2,val=10 \
++-numa dist,src=2,dst=3,val=21 \
++-numa dist,src=2,dst=4,val=31 \
++-numa dist,src=2,dst=5,val=41 \
++-numa dist,src=3,dst=0,val=41 \
++-numa dist,src=3,dst=1,val=31 \
++-numa dist,src=3,dst=2,val=21 \
++-numa dist,src=3,dst=3,val=10 \
++-numa dist,src=3,dst=4,val=21 \
++-numa dist,src=3,dst=5,val=31 \
++-numa dist,src=4,dst=0,val=51 \
++-numa dist,src=4,dst=1,val=41 \
++-numa dist,src=4,dst=2,val=31 \
++-numa dist,src=4,dst=3,val=21 \
++-numa dist,src=4,dst=4,val=10 \
++-numa dist,src=4,dst=5,val=21 \
++-numa dist,src=5,dst=0,val=61 \
++-numa dist,src=5,dst=1,val=51 \
++-numa dist,src=5,dst=2,val=41 \
++-numa dist,src=5,dst=3,val=31 \
++-numa dist,src=5,dst=4,val=21 \
++-numa dist,src=5,dst=5,val=10 \
++-uuid c7a5fdb2-cdaf-9455-926a-d65c16db1809 \
++-nographic \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-QEMUGuest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-usb \
++-device virtio-balloon-pci,id=balloon0,bus=pci.0,addr=0x2
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.xml b/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.xml
+new file mode 100644
+index 0000000000..0f33526b46
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-numatune-distances.xml
+@@ -0,0 +1,65 @@
++<domain type='qemu'>
++  <name>QEMUGuest</name>
++  <uuid>c7a5fdb2-cdaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>8388608</memory>
++  <currentMemory unit='KiB'>8388608</currentMemory>
++  <vcpu placement='static'>12</vcpu>
++  <os>
++    <type arch='x86_64' machine='xenfv'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <features>
++    <acpi/>
++    <apic/>
++    <pae/>
++  </features>
++  <cpu>
++    <numa>
++      <cell id='0' cpus='0,11' memory='2097152' unit='KiB'>
++        <distances>
++          <sibling id='1' value='21'/>
++          <sibling id='2' value='31'/>
++          <sibling id='3' value='41'/>
++          <sibling id='4' value='51'/>
++          <sibling id='5' value='61'/>
++        </distances>
++      </cell>
++      <cell id='1' cpus='1,10' memory='2097152' unit='KiB'>
++        <distances>
++          <sibling id='2' value='21'/>
++          <sibling id='3' value='31'/>
++          <sibling id='4' value='41'/>
++          <sibling id='5' value='51'/>
++        </distances>
++      </cell>
++      <cell id='2' cpus='2,9' memory='2097152' unit='KiB'>
++        <distances>
++          <sibling id='3' value='21'/>
++          <sibling id='4' value='31'/>
++          <sibling id='5' value='41'/>
++        </distances>
++      </cell>
++      <cell id='3' cpus='3,8' memory='2097152' unit='KiB'>
++        <distances>
++          <sibling id='4' value='21'/>
++          <sibling id='5' value='31'/>
++        </distances>
++      </cell>
++      <cell id='4' cpus='4,7' memory='2097152' unit='KiB'>
++        <distances>
++          <sibling id='5' value='21'/>
++        </distances>
++      </cell>
++      <cell id='5' cpus='5-6' memory='2097152' unit='KiB'/>
++    </numa>
++  </cpu>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>restart</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-x86_64</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 77c9783929..72cefe4906 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1726,6 +1726,8 @@ mymain(void)
+                   QEMU_CAPS_OBJECT_MEMORY_RAM);
+     DO_TEST_FAILURE("numatune-memnode-no-memory", NONE);
+ 
++    DO_TEST("numatune-distances", QEMU_CAPS_NUMA, QEMU_CAPS_NUMA_DIST);
++
+     DO_TEST("numatune-auto-nodeset-invalid", NONE);
+     DO_TEST("numatune-auto-prefer", QEMU_CAPS_OBJECT_MEMORY_RAM,
+             QEMU_CAPS_OBJECT_MEMORY_FILE);
+-- 
+2.15.1
+

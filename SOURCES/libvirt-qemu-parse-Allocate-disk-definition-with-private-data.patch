@@ -1,0 +1,35 @@
+From 53806054c0b1b7ee2c8df5e46fa18b87aaee1ca1 Mon Sep 17 00:00:00 2001
+Message-Id: <53806054c0b1b7ee2c8df5e46fa18b87aaee1ca1@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 13 Nov 2017 13:37:52 +0100
+Subject: [PATCH] qemu: parse: Allocate disk definition with private data
+
+Use virDomainDiskDefNew instead of VIR_ALLOC in
+qemuParseCommandLineDisk.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1510781
+(cherry picked from commit 994c49ac34181cb664b18856df38c2f5c326ff03)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_parse_command.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/src/qemu/qemu_parse_command.c b/src/qemu/qemu_parse_command.c
+index 649c3b1ccf..a8d0d7c535 100644
+--- a/src/qemu/qemu_parse_command.c
++++ b/src/qemu/qemu_parse_command.c
+@@ -658,10 +658,8 @@ qemuParseCommandLineDisk(virDomainXMLOptionPtr xmlopt,
+                           0) < 0)
+         return NULL;
+ 
+-    if (VIR_ALLOC(def) < 0)
++    if (!(def = virDomainDiskDefNew(xmlopt)))
+         goto cleanup;
+-    if (VIR_ALLOC(def->src) < 0)
+-        goto error;
+ 
+     if (qemuDomainIsPSeries(dom))
+         def->bus = VIR_DOMAIN_DISK_BUS_SCSI;
+-- 
+2.15.0
+

@@ -1,0 +1,269 @@
+From fa01d1d69ceeb4da685e6f39d11e9f5d05201589 Mon Sep 17 00:00:00 2001
+Message-Id: <fa01d1d69ceeb4da685e6f39d11e9f5d05201589@dist-git>
+From: Vincent Bernat <vincent@bernat.im>
+Date: Wed, 23 May 2018 12:45:29 +0200
+Subject: [PATCH] util: don't check for parallel iteration in hash-related
+ functions
+
+RHEL-7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1576464
+RHEL-7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1581364
+
+This is the responsability of the caller to apply the correct lock
+before using these functions. Moreover, the use of a simple boolean
+was still racy: two threads may check the boolean and "lock" it
+simultaneously.
+
+Users of functions from src/util/virhash.c have to be checked for
+correctness. Lookups and iteration should hold a RO
+lock. Modifications should hold a RW lock.
+
+Most important uses seem to be covered. Callers have now a greater
+responsability, notably the ability to execute some operations while
+iterating were reliably forbidden before are now accepted.
+
+Signed-off-by: Vincent Bernat <vincent@bernat.im>
+(cherry picked from commit 4d7384eb9ddef2008cb0cc165eb808f74bc83d6b)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+
+Conflicts: src/util/virhash.c: Since
+  3e7db8d3e8538bcd5deb1b111fb1233fc18831aa isn't backported,
+  macro that is being removed has misaligned line breaks. It
+  needs to be removed regardless.
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/util/virhash.c  | 37 --------------------
+ tests/virhashtest.c | 83 ---------------------------------------------
+ 2 files changed, 120 deletions(-)
+
+diff --git a/src/util/virhash.c b/src/util/virhash.c
+index 7fa2992f18..475c2b0281 100644
+--- a/src/util/virhash.c
++++ b/src/util/virhash.c
+@@ -41,12 +41,6 @@ VIR_LOG_INIT("util.hash");
+ 
+ /* #define DEBUG_GROW */
+ 
+-#define virHashIterationError(ret)                                      \
+-    do {                                                                \
+-        VIR_ERROR(_("Hash operation not allowed during iteration"));   \
+-        return ret;                                                     \
+-    } while (0)
+-
+ /*
+  * A single entry in the hash table
+  */
+@@ -66,10 +60,6 @@ struct _virHashTable {
+     uint32_t seed;
+     size_t size;
+     size_t nbElems;
+-    /* True iff we are iterating over hash entries. */
+-    bool iterating;
+-    /* Pointer to the current entry during iteration. */
+-    virHashEntryPtr current;
+     virHashDataFree dataFree;
+     virHashKeyCode keyCode;
+     virHashKeyEqual keyEqual;
+@@ -339,9 +329,6 @@ virHashAddOrUpdateEntry(virHashTablePtr table, const void *name,
+     if ((table == NULL) || (name == NULL))
+         return -1;
+ 
+-    if (table->iterating)
+-        virHashIterationError(-1);
+-
+     key = virHashComputeKey(table, name);
+ 
+     /* Check for duplicate entry */
+@@ -551,9 +538,6 @@ virHashRemoveEntry(virHashTablePtr table, const void *name)
+     nextptr = table->table + virHashComputeKey(table, name);
+     for (entry = *nextptr; entry; entry = entry->next) {
+         if (table->keyEqual(entry->name, name)) {
+-            if (table->iterating && table->current != entry)
+-                virHashIterationError(-1);
+-
+             if (table->dataFree)
+                 table->dataFree(entry->payload, entry->name);
+             if (table->keyFree)
+@@ -593,18 +577,11 @@ virHashForEach(virHashTablePtr table, virHashIterator iter, void *data)
+     if (table == NULL || iter == NULL)
+         return -1;
+ 
+-    if (table->iterating)
+-        virHashIterationError(-1);
+-
+-    table->iterating = true;
+-    table->current = NULL;
+     for (i = 0; i < table->size; i++) {
+         virHashEntryPtr entry = table->table[i];
+         while (entry) {
+             virHashEntryPtr next = entry->next;
+-            table->current = entry;
+             ret = iter(entry->payload, entry->name, data);
+-            table->current = NULL;
+ 
+             if (ret < 0)
+                 goto cleanup;
+@@ -615,7 +592,6 @@ virHashForEach(virHashTablePtr table, virHashIterator iter, void *data)
+ 
+     ret = 0;
+  cleanup:
+-    table->iterating = false;
+     return ret;
+ }
+ 
+@@ -643,11 +619,6 @@ virHashRemoveSet(virHashTablePtr table,
+     if (table == NULL || iter == NULL)
+         return -1;
+ 
+-    if (table->iterating)
+-        virHashIterationError(-1);
+-
+-    table->iterating = true;
+-    table->current = NULL;
+     for (i = 0; i < table->size; i++) {
+         virHashEntryPtr *nextptr = table->table + i;
+ 
+@@ -667,7 +638,6 @@ virHashRemoveSet(virHashTablePtr table,
+             }
+         }
+     }
+-    table->iterating = false;
+ 
+     return count;
+ }
+@@ -723,23 +693,16 @@ void *virHashSearch(const virHashTable *ctable,
+     if (table == NULL || iter == NULL)
+         return NULL;
+ 
+-    if (table->iterating)
+-        virHashIterationError(NULL);
+-
+-    table->iterating = true;
+-    table->current = NULL;
+     for (i = 0; i < table->size; i++) {
+         virHashEntryPtr entry;
+         for (entry = table->table[i]; entry; entry = entry->next) {
+             if (iter(entry->payload, entry->name, data)) {
+-                table->iterating = false;
+                 if (name)
+                     *name = table->keyCopy(entry->name);
+                 return entry->payload;
+             }
+         }
+     }
+-    table->iterating = false;
+ 
+     return NULL;
+ }
+diff --git a/tests/virhashtest.c b/tests/virhashtest.c
+index 9407f98c4b..77d724c4c6 100644
+--- a/tests/virhashtest.c
++++ b/tests/virhashtest.c
+@@ -221,32 +221,6 @@ testHashRemoveForEachAll(void *payload ATTRIBUTE_UNUSED,
+ }
+ 
+ 
+-const int testHashCountRemoveForEachForbidden = ARRAY_CARDINALITY(uuids);
+-
+-static int
+-testHashRemoveForEachForbidden(void *payload ATTRIBUTE_UNUSED,
+-                               const void *name,
+-                               void *data)
+-{
+-    virHashTablePtr hash = data;
+-    size_t i;
+-
+-    for (i = 0; i < ARRAY_CARDINALITY(uuids_subset); i++) {
+-        if (STREQ(uuids_subset[i], name)) {
+-            int next = (i + 1) % ARRAY_CARDINALITY(uuids_subset);
+-
+-            if (virHashRemoveEntry(hash, uuids_subset[next]) == 0) {
+-                VIR_TEST_VERBOSE(
+-                        "\nentry \"%s\" should not be allowed to be removed",
+-                        uuids_subset[next]);
+-            }
+-            break;
+-        }
+-    }
+-    return 0;
+-}
+-
+-
+ static int
+ testHashRemoveForEach(const void *data)
+ {
+@@ -303,61 +277,6 @@ testHashSteal(const void *data ATTRIBUTE_UNUSED)
+ }
+ 
+ 
+-static int
+-testHashIter(void *payload ATTRIBUTE_UNUSED,
+-             const void *name ATTRIBUTE_UNUSED,
+-             void *data ATTRIBUTE_UNUSED)
+-{
+-    return 0;
+-}
+-
+-static int
+-testHashForEachIter(void *payload ATTRIBUTE_UNUSED,
+-                    const void *name ATTRIBUTE_UNUSED,
+-                    void *data)
+-{
+-    virHashTablePtr hash = data;
+-
+-    if (virHashAddEntry(hash, uuids_new[0], NULL) == 0)
+-        VIR_TEST_VERBOSE("\nadding entries in ForEach should be forbidden");
+-
+-    if (virHashUpdateEntry(hash, uuids_new[0], NULL) == 0)
+-        VIR_TEST_VERBOSE("\nupdating entries in ForEach should be forbidden");
+-
+-    if (virHashSteal(hash, uuids_new[0]) != NULL)
+-        VIR_TEST_VERBOSE("\nstealing entries in ForEach should be forbidden");
+-
+-    if (virHashSteal(hash, uuids_new[0]) != NULL)
+-        VIR_TEST_VERBOSE("\nstealing entries in ForEach should be forbidden");
+-
+-    if (virHashForEach(hash, testHashIter, NULL) >= 0)
+-        VIR_TEST_VERBOSE("\niterating through hash in ForEach"
+-                " should be forbidden");
+-    return 0;
+-}
+-
+-static int
+-testHashForEach(const void *data ATTRIBUTE_UNUSED)
+-{
+-    virHashTablePtr hash;
+-    int ret = -1;
+-
+-    if (!(hash = testHashInit(0)))
+-        return -1;
+-
+-    if (virHashForEach(hash, testHashForEachIter, hash)) {
+-        VIR_TEST_VERBOSE("\nvirHashForEach didn't go through all entries");
+-        goto cleanup;
+-    }
+-
+-    ret = 0;
+-
+- cleanup:
+-    virHashFree(hash);
+-    return ret;
+-}
+-
+-
+ static int
+ testHashRemoveSetIter(const void *payload ATTRIBUTE_UNUSED,
+                       const void *name,
+@@ -628,9 +547,7 @@ mymain(void)
+     DO_TEST("Remove", Remove);
+     DO_TEST_DATA("Remove in ForEach", RemoveForEach, Some);
+     DO_TEST_DATA("Remove in ForEach", RemoveForEach, All);
+-    DO_TEST_DATA("Remove in ForEach", RemoveForEach, Forbidden);
+     DO_TEST("Steal", Steal);
+-    DO_TEST("Forbidden ops in ForEach", ForEach);
+     DO_TEST("RemoveSet", RemoveSet);
+     DO_TEST("Search", Search);
+     DO_TEST("GetItems", GetItems);
+-- 
+2.17.1
+

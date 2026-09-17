@@ -1,0 +1,113 @@
+From d41c109a5c9a6224201acdd0efde034776cfa49e Mon Sep 17 00:00:00 2001
+Message-Id: <d41c109a5c9a6224201acdd0efde034776cfa49e@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Fri, 2 Feb 2018 15:21:28 +0100
+Subject: [PATCH] tests: Add test for properly removing cachetune entries
+
+Cachetune for unavailable vCPUs should be cleared the same way vcpupin and other
+things do, so let's add tests for it.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 958e0431a93b5d330dcc3fa5984a85e5c789eead)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1540817
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ .../generic-cachetune-extra-tunes.xml              | 33 ++++++++++++++++++++++
+ .../generic-cachetune-extra-tunes.xml              | 30 ++++++++++++++++++++
+ tests/genericxml2xmltest.c                         |  1 +
+ 3 files changed, 64 insertions(+)
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-extra-tunes.xml
+ create mode 100644 tests/genericxml2xmloutdata/generic-cachetune-extra-tunes.xml
+
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-extra-tunes.xml b/tests/genericxml2xmlindata/generic-cachetune-extra-tunes.xml
+new file mode 100644
+index 0000000000..d3b01a8ecd
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-extra-tunes.xml
+@@ -0,0 +1,33 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>2</vcpu>
++  <cputune>
++    <cachetune vcpus='0-3'>
++      <cache id='0' level='3' type='code' size='7680' unit='KiB'/>
++      <cache id='1' level='3' type='data' size='3840' unit='KiB'/>
++    </cachetune>
++    <cachetune vcpus='100'>
++      <cache id='1' level='3' type='code' size='6' unit='MiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmloutdata/generic-cachetune-extra-tunes.xml b/tests/genericxml2xmloutdata/generic-cachetune-extra-tunes.xml
+new file mode 100644
+index 0000000000..db85af08da
+--- /dev/null
++++ b/tests/genericxml2xmloutdata/generic-cachetune-extra-tunes.xml
+@@ -0,0 +1,30 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>2</vcpu>
++  <cputune>
++    <cachetune vcpus='0-1'>
++      <cache id='0' level='3' type='code' size='7680' unit='KiB'/>
++      <cache id='1' level='3' type='data' size='3840' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmltest.c b/tests/genericxml2xmltest.c
+index 4ced5c349c..4c3f32a816 100644
+--- a/tests/genericxml2xmltest.c
++++ b/tests/genericxml2xmltest.c
+@@ -133,6 +133,7 @@ mymain(void)
+     DO_TEST("cachetune");
+     DO_TEST("cachetune-small");
+     DO_TEST("cachetune-cdp");
++    DO_TEST_DIFFERENT("cachetune-extra-tunes");
+     DO_TEST_FULL("cachetune-colliding-allocs", false, true,
+                  TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE);
+     DO_TEST_FULL("cachetune-colliding-tunes", false, true,
+-- 
+2.16.1
+

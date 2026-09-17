@@ -1,0 +1,108 @@
+From 06cb6ae1254842377d0b17f9fdd52e0d2b6b23eb Mon Sep 17 00:00:00 2001
+Message-Id: <06cb6ae1254842377d0b17f9fdd52e0d2b6b23eb@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:22:56 +0100
+Subject: [PATCH] qemu: Introduce qemuDomainChrDefPostParse()
+
+Having a separate function for char device handling is better than
+adding even more code to qemuDomainDeviceDefPostParse().
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+Reviewed-by: Marc Hartmayer <mhartmay@linux.vnet.ibm.com>
+(cherry picked from commit f4b50cc1b994e44c793f4dea59489ba51e2d1fe0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c | 57 ++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 34 insertions(+), 23 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 138f773c22..b15d994774 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -4082,6 +4082,35 @@ qemuDomainControllerDefPostParse(virDomainControllerDefPtr cont,
+     return 0;
+ }
+ 
++static int
++qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
++                          const virDomainDef *def,
++                          virQEMUDriverPtr driver,
++                          unsigned int parseFlags)
++{
++    /* set the default console type for S390 arches */
++    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
++        chr->targetType == VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_NONE &&
++        ARCH_IS_S390(def->os.arch)) {
++        chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_VIRTIO;
++    }
++
++    /* clear auto generated unix socket path for inactive definitions */
++    if (parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE) {
++        if (qemuDomainChrDefDropDefaultPath(chr, driver) < 0)
++            return -1;
++
++        /* For UNIX chardev if no path is provided we generate one.
++         * This also implies that the mode is 'bind'. */
++        if (chr->source &&
++            chr->source->type == VIR_DOMAIN_CHR_TYPE_UNIX &&
++            !chr->source->data.nix.path) {
++            chr->source->data.nix.listen = true;
++        }
++    }
++
++    return 0;
++}
+ 
+ static int
+ qemuDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
+@@ -4142,29 +4171,6 @@ qemuDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
+         }
+     }
+ 
+-    /* set the default console type for S390 arches */
+-    if (dev->type == VIR_DOMAIN_DEVICE_CHR &&
+-        dev->data.chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
+-        dev->data.chr->targetType == VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_NONE &&
+-        ARCH_IS_S390(def->os.arch))
+-        dev->data.chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_VIRTIO;
+-
+-    /* clear auto generated unix socket path for inactive definitions */
+-    if ((parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE) &&
+-        dev->type == VIR_DOMAIN_DEVICE_CHR) {
+-        virDomainChrDefPtr chr = dev->data.chr;
+-        if (qemuDomainChrDefDropDefaultPath(chr, driver) < 0)
+-            goto cleanup;
+-
+-        /* For UNIX chardev if no path is provided we generate one.
+-         * This also implies that the mode is 'bind'. */
+-        if (chr->source &&
+-            chr->source->type == VIR_DOMAIN_CHR_TYPE_UNIX &&
+-            !chr->source->data.nix.path) {
+-            chr->source->data.nix.listen = true;
+-        }
+-    }
+-
+     if (dev->type == VIR_DOMAIN_DEVICE_VIDEO) {
+         if (dev->data.video->type == VIR_DOMAIN_VIDEO_TYPE_DEFAULT) {
+             if ARCH_IS_PPC64(def->os.arch)
+@@ -4200,6 +4206,11 @@ qemuDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
+         qemuDomainShmemDefPostParse(dev->data.shmem) < 0)
+         goto cleanup;
+ 
++    if (dev->type == VIR_DOMAIN_DEVICE_CHR &&
++        qemuDomainChrDefPostParse(dev->data.chr, def, driver, parseFlags) < 0) {
++        goto cleanup;
++    }
++
+     ret = 0;
+ 
+  cleanup:
+-- 
+2.15.1
+

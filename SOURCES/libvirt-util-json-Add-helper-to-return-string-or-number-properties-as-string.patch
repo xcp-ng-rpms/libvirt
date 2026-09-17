@@ -1,0 +1,72 @@
+From c9083a7a541a2d7231633df10dba151853fd4bca Mon Sep 17 00:00:00 2001
+Message-Id: <c9083a7a541a2d7231633df10dba151853fd4bca@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Wed, 31 Jan 2018 12:50:59 +0100
+Subject: [PATCH] util: json: Add helper to return string or number properties
+ as string
+
+The helper is useful in cases when the JSON we have to parse may contain
+one of the two due to historical reasons and the number value itself
+would be stored as a string.
+
+(cherry picked from commit d3da8013cc11d6a10d4a4146bcbb0a7e34523fa5)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1540290
+---
+ src/util/virjson.c | 27 +++++++++++++++++++++++++++
+ src/util/virjson.h |  1 +
+ 2 files changed, 28 insertions(+)
+
+diff --git a/src/util/virjson.c b/src/util/virjson.c
+index 17b11f2b3d..14b68b8c93 100644
+--- a/src/util/virjson.c
++++ b/src/util/virjson.c
+@@ -1208,6 +1208,33 @@ virJSONValueObjectGetString(virJSONValuePtr object,
+ }
+ 
+ 
++/**
++ * virJSONValueObjectGetStringOrNumber:
++ * @object: JSON value object
++ * @key: name of the property in @object to get
++ *
++ * Gets a property named @key from the JSON object @object. The value may be
++ * a number or a string and is returned as a string. In cases when the property
++ * is not present or is not a string or number NULL is returned.
++ */
++const char *
++virJSONValueObjectGetStringOrNumber(virJSONValuePtr object,
++                                    const char *key)
++{
++    virJSONValuePtr val = virJSONValueObjectGet(object, key);
++
++    if (!val)
++        return NULL;
++
++    if (val->type == VIR_JSON_TYPE_STRING)
++        return val->data.string;
++    else if (val->type == VIR_JSON_TYPE_NUMBER)
++        return val->data.number;
++
++    return NULL;
++}
++
++
+ int
+ virJSONValueObjectGetNumberInt(virJSONValuePtr object,
+                                const char *key,
+diff --git a/src/util/virjson.h b/src/util/virjson.h
+index e89a776ab5..b76a3c3472 100644
+--- a/src/util/virjson.h
++++ b/src/util/virjson.h
+@@ -149,6 +149,7 @@ virJSONValuePtr virJSONValueObjectStealArray(virJSONValuePtr object,
+                                              const char *key);
+ 
+ const char *virJSONValueObjectGetString(virJSONValuePtr object, const char *key);
++const char *virJSONValueObjectGetStringOrNumber(virJSONValuePtr object, const char *key);
+ int virJSONValueObjectGetNumberInt(virJSONValuePtr object, const char *key, int *value);
+ int virJSONValueObjectGetNumberUint(virJSONValuePtr object, const char *key, unsigned int *value);
+ int virJSONValueObjectGetNumberLong(virJSONValuePtr object, const char *key, long long *value);
+-- 
+2.16.1
+

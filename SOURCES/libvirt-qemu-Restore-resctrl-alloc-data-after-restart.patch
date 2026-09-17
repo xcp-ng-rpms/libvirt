@@ -1,0 +1,47 @@
+From 120967192737301cd93c597ca06824e2f951b658 Mon Sep 17 00:00:00 2001
+Message-Id: <120967192737301cd93c597ca06824e2f951b658@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:45 +0100
+Subject: [PATCH] qemu: Restore resctrl alloc data after restart
+
+During reconnect we need to reconstruct the paths of all cachetunes so that they
+get cleaned up when the domain is stopped.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 6c44013b174d676c37e86fc884bd933cf8f982fa)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_process.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 08081aa278..3bb4b14948 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -77,6 +77,7 @@
+ #include "configmake.h"
+ #include "nwfilter_conf.h"
+ #include "netdev_bandwidth_conf.h"
++#include "virresctrl.h"
+ 
+ #define VIR_FROM_THIS VIR_FROM_QEMU
+ 
+@@ -7328,6 +7329,12 @@ qemuProcessReconnect(void *opaque)
+     if (qemuConnectAgent(driver, obj) < 0)
+         goto error;
+ 
++    for (i = 0; i < obj->def->ncachetunes; i++) {
++        if (virResctrlAllocDeterminePath(obj->def->cachetunes[i]->alloc,
++                                         priv->machineName) < 0)
++            goto error;
++    }
++
+     /* update domain state XML with possibly updated state in virDomainObj */
+     if (virDomainSaveStatus(driver->xmlopt, cfg->stateDir, obj, driver->caps) < 0)
+         goto error;
+-- 
+2.16.1
+

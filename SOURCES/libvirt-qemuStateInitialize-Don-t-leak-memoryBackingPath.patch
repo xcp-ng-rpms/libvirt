@@ -1,0 +1,43 @@
+From 05c1435a164d9ada81d5159302f5b531b871efdf Mon Sep 17 00:00:00 2001
+Message-Id: <05c1435a164d9ada81d5159302f5b531b871efdf@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 1 Dec 2017 15:48:39 +0100
+Subject: [PATCH] qemuStateInitialize: Don't leak @memoryBackingPath
+
+==899== 39 bytes in 1 blocks are definitely lost in loss record 732 of 1,003
+==899==    at 0x4C2AEDF: malloc (vg_replace_malloc.c:299)
+==899==    by 0x8B68CE7: vasprintf (in /lib64/libc-2.25.so)
+==899==    by 0x55498D2: virVasprintfInternal (virstring.c:708)
+==899==    by 0x55499E7: virAsprintfInternal (virstring.c:729)
+==899==    by 0x2BECFFF0: qemuGetMemoryBackingBasePath (qemu_conf.c:1757)
+==899==    by 0x2BF23225: qemuStateInitialize (qemu_driver.c:893)
+==899==    by 0x563073D: virStateInitialize (libvirt.c:770)
+==899==    by 0x124CC4: daemonRunStateInit (libvirtd.c:834)
+==899==    by 0x55521CD: virThreadHelper (virthread.c:206)
+==899==    by 0x88D9686: start_thread (in /lib64/libpthread-2.25.so)
+==899==    by 0x8BEAEFE: clone (in /lib64/libc-2.25.so)
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 3eb840904a088a89d05821d975ed4624962431f3)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1519759
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_driver.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index d0d29747cf..fa73fc30d6 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -904,6 +904,7 @@ qemuStateInitialize(bool privileged,
+         virFileUpdatePerm(memoryBackingPath,
+                           0, S_IXGRP | S_IXOTH) < 0)
+         goto error;
++    VIR_FREE(memoryBackingPath);
+ 
+     if (!(qemu_driver->closeCallbacks = virCloseCallbacksNew()))
+         goto error;
+-- 
+2.15.1
+

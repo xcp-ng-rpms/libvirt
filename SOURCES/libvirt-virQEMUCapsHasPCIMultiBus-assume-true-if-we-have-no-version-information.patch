@@ -1,0 +1,104 @@
+From 7bac1e059259bee2f00d6e363dad32ca2c2decb6 Mon Sep 17 00:00:00 2001
+Message-Id: <7bac1e059259bee2f00d6e363dad32ca2c2decb6@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Thu, 30 Nov 2017 17:46:00 +0100
+Subject: [PATCH] virQEMUCapsHasPCIMultiBus: assume true if we have no version
+ information
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In status XML, we do not store the QEMU version information, we only
+format all the capabilities. We dropped QEMU_CAPS_PCI_MULTIBUS
+in commit 5b783379 which was released in libvirt 3.2.0.
+
+Therefore the only way of telling if the already running domain
+at the time of daemon restart has been started with a QEMU that does
+use 'pci.0' or not on PPC is to look at the pci-root controller's
+alias. This is not an option if the domain has a user-specified alias
+for the pci-root.
+
+Instead of reintroducing the capability, assume 'pci.0' when we have
+no version information. That way the only left broken use case would
+be the combination of user aliases and very old QEMU.
+
+Partially reverts commit 3a37af1e4.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1518148
+(cherry picked from commit 65108d94d093de082dc5a2d4a73844dd569506db)
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 16 ++++++++--------
+ src/qemu/qemu_capspriv.h     |  4 ----
+ tests/qemuxml2argvtest.c     |  5 -----
+ 3 files changed, 8 insertions(+), 17 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 81f7e4e440..13ff1286c4 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -2435,6 +2435,14 @@ bool virQEMUCapsHasPCIMultiBus(virQEMUCapsPtr qemuCaps,
+          *     ppce500: 1.6.0
+          */
+ 
++        /* We do not store the qemu version in domain status XML.
++         * Hope the user is using a QEMU new enough to use 'pci.0',
++         * otherwise the results of this function will be wrong
++         * for domains already running at the time of daemon
++         * restart */
++        if (qemuCaps->version == 0)
++            return true;
++
+         if (qemuCaps->version >= 2000000)
+             return true;
+ 
+@@ -2486,14 +2494,6 @@ virArch virQEMUCapsGetArch(virQEMUCapsPtr qemuCaps)
+ }
+ 
+ 
+-void
+-virQEMUCapsSetVersion(virQEMUCapsPtr qemuCaps,
+-                      unsigned int version)
+-{
+-    qemuCaps->version = version;
+-}
+-
+-
+ unsigned int virQEMUCapsGetVersion(virQEMUCapsPtr qemuCaps)
+ {
+     return qemuCaps->version;
+diff --git a/src/qemu/qemu_capspriv.h b/src/qemu/qemu_capspriv.h
+index f23995ec6e..219daa3629 100644
+--- a/src/qemu/qemu_capspriv.h
++++ b/src/qemu/qemu_capspriv.h
+@@ -55,10 +55,6 @@ void
+ virQEMUCapsSetArch(virQEMUCapsPtr qemuCaps,
+                    virArch arch);
+ 
+-void
+-virQEMUCapsSetVersion(virQEMUCapsPtr qemuCaps,
+-                      unsigned int version);
+-
+ void
+ virQEMUCapsInitHostCPUModel(virQEMUCapsPtr qemuCaps,
+                             virArch hostArch,
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 72cefe4906..686a63855c 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -384,11 +384,6 @@ testUpdateQEMUCaps(const struct testInfo *info,
+ 
+     virQEMUCapsInitQMPBasicArch(info->qemuCaps);
+ 
+-    /* We need to pretend QEMU 2.0.0 is in use so that pSeries guests
+-     * will get the correct alias assigned to their buses.
+-     * See virQEMUCapsHasPCIMultiBus() */
+-    virQEMUCapsSetVersion(info->qemuCaps, 2000000);
+-
+     if (testAddCPUModels(info->qemuCaps, info->skipLegacyCPUs) < 0)
+         goto cleanup;
+ 
+-- 
+2.15.1
+

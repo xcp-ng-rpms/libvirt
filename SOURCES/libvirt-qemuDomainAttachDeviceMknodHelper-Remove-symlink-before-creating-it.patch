@@ -1,0 +1,67 @@
+From 6c4c780eda082ef395b70af89b8b8942b9ad4a9d Mon Sep 17 00:00:00 2001
+Message-Id: <6c4c780eda082ef395b70af89b8b8942b9ad4a9d@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 8 Jan 2018 10:16:19 +0100
+Subject: [PATCH] qemuDomainAttachDeviceMknodHelper: Remove symlink before
+ creating it
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1528502
+
+So imagine you have /dev/blah symlink which points to /dev/sda.
+You attach /dev/blah as disk to your domain. Libvirt correctly
+creates the /dev/blah -> /dev/sda symlink in the qemu namespace.
+However, then you detach the disk, change the symlink so that it
+points to /dev/sdb and tries to attach the disk again. This time,
+however, the attach fails (well, qemu attaches wrong disk)
+because the code assumes that symlinks don't change. Well they
+do.
+
+This is inspired by test fix written by Eduardo Habkost.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+(cherry picked from commit db98e7f67ea0d7699410f514f01947cef5128a6c)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Andrea Bolognani <abologna@redhat.com>
+---
+ src/qemu/qemu_domain.c | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 8967f2774d..b0c78cc7c4 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -9559,13 +9559,23 @@ qemuDomainAttachDeviceMknodHelper(pid_t pid ATTRIBUTE_UNUSED,
+ 
+     if (isLink) {
+         VIR_DEBUG("Creating symlink %s -> %s", data->file, data->target);
++
++        /* First, unlink the symlink target. Symlinks change and
++         * therefore we have no guarantees that pre-existing
++         * symlink is still valid. */
++        if (unlink(data->file) < 0 &&
++            errno != ENOENT) {
++            virReportSystemError(errno,
++                                 _("Unable to remove symlink %s"),
++                                 data->file);
++            goto cleanup;
++        }
++
+         if (symlink(data->target, data->file) < 0) {
+-            if (errno != EEXIST) {
+-                virReportSystemError(errno,
+-                                     _("Unable to create symlink %s"),
+-                                     data->target);
+-                goto cleanup;
+-            }
++            virReportSystemError(errno,
++                                 _("Unable to create symlink %s (pointing to %s)"),
++                                 data->file, data->target);
++            goto cleanup;
+         } else {
+             delDevice = true;
+         }
+-- 
+2.15.1
+

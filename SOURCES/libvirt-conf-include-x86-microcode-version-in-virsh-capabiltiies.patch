@@ -1,0 +1,133 @@
+From 4f1684dd855d48517e04507edadba2fd454e4ada Mon Sep 17 00:00:00 2001
+Message-Id: <4f1684dd855d48517e04507edadba2fd454e4ada@dist-git>
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 12 Dec 2017 16:23:40 +0100
+Subject: [PATCH] conf: include x86 microcode version in virsh capabiltiies
+
+A microcode update can cause the CPUID bits to change; an example
+from the past was the update that disabled TSX on several Haswell and
+Broadwell machines.
+
+In order to track the x86 microcode version in the QEMU capabilities,
+we have to fetch it and store it in the host CPU.  This also makes the
+version visible in "virsh capabilities", which is a nice side effect.
+
+CVE-2017-5715
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/cpu_conf.c | 14 ++++++++++++++
+ src/conf/cpu_conf.h |  1 +
+ src/cpu/cpu_x86.c   |  9 +++++++++
+ 3 files changed, 24 insertions(+)
+
+diff --git a/src/conf/cpu_conf.c b/src/conf/cpu_conf.c
+index 669935acf8..7e00299c66 100644
+--- a/src/conf/cpu_conf.c
++++ b/src/conf/cpu_conf.c
+@@ -130,6 +130,7 @@ virCPUDefCopyModelFilter(virCPUDefPtr dst,
+         VIR_STRDUP(dst->vendor_id, src->vendor_id) < 0 ||
+         VIR_ALLOC_N(dst->features, src->nfeatures) < 0)
+         return -1;
++    dst->microcodeVersion = src->microcodeVersion;
+     dst->nfeatures_max = src->nfeatures;
+     dst->nfeatures = 0;
+ 
+@@ -181,6 +182,7 @@ virCPUDefStealModel(virCPUDefPtr dst,
+ 
+     VIR_STEAL_PTR(dst->model, src->model);
+     VIR_STEAL_PTR(dst->features, src->features);
++    dst->microcodeVersion = src->microcodeVersion;
+     dst->nfeatures_max = src->nfeatures_max;
+     src->nfeatures_max = 0;
+     dst->nfeatures = src->nfeatures;
+@@ -382,6 +384,14 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
+             goto cleanup;
+         }
+         VIR_FREE(arch);
++
++        if (virXPathBoolean("boolean(./microcode[1]/@version)", ctxt) > 0 &&
++            virXPathUInt("string(./microcode[1]/@version)", ctxt,
++                         &def->microcodeVersion) < 0) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                           _("invalid microcode version"));
++            goto cleanup;
++        }
+     }
+ 
+     if (!(def->model = virXPathString("string(./model[1])", ctxt)) &&
+@@ -720,6 +730,10 @@ virCPUDefFormatBuf(virBufferPtr buf,
+     if (formatModel && def->vendor)
+         virBufferEscapeString(buf, "<vendor>%s</vendor>\n", def->vendor);
+ 
++    if (def->type == VIR_CPU_TYPE_HOST && def->microcodeVersion)
++        virBufferAsprintf(buf, "<microcode version='%u'/>\n",
++                          def->microcodeVersion);
++
+     if (def->sockets && def->cores && def->threads) {
+         virBufferAddLit(buf, "<topology");
+         virBufferAsprintf(buf, " sockets='%u'", def->sockets);
+diff --git a/src/conf/cpu_conf.h b/src/conf/cpu_conf.h
+index d1983f5d4f..9f2e7ee264 100644
+--- a/src/conf/cpu_conf.h
++++ b/src/conf/cpu_conf.h
+@@ -133,6 +133,7 @@ struct _virCPUDef {
+     char *vendor_id;    /* vendor id returned by CPUID in the guest */
+     int fallback;       /* enum virCPUFallback */
+     char *vendor;
++    unsigned int microcodeVersion;
+     unsigned int sockets;
+     unsigned int cores;
+     unsigned int threads;
+diff --git a/src/cpu/cpu_x86.c b/src/cpu/cpu_x86.c
+index 693e571a3d..ad35532fc1 100644
+--- a/src/cpu/cpu_x86.c
++++ b/src/cpu/cpu_x86.c
+@@ -33,6 +33,7 @@
+ #include "virbuffer.h"
+ #include "virendian.h"
+ #include "virstring.h"
++#include "virhostcpu.h"
+ 
+ #define VIR_FROM_THIS VIR_FROM_CPU
+ 
+@@ -153,6 +154,8 @@ struct _virCPUx86Map {
+ };
+ 
+ static virCPUx86MapPtr cpuMap;
++static unsigned int microcodeVersion;
++
+ int virCPUx86DriverOnceInit(void);
+ VIR_ONCE_GLOBAL_INIT(virCPUx86Driver);
+ 
+@@ -1409,6 +1412,8 @@ virCPUx86DriverOnceInit(void)
+     if (!(cpuMap = virCPUx86LoadMap()))
+         return -1;
+ 
++    microcodeVersion = virHostCPUGetMicrocodeVersion();
++
+     return 0;
+ }
+ 
+@@ -2424,6 +2429,9 @@ virCPUx86GetHost(virCPUDefPtr cpu,
+     virCPUDataPtr cpuData = NULL;
+     int ret = -1;
+ 
++    if (virCPUx86DriverInitialize() < 0)
++        goto cleanup;
++
+     if (!(cpuData = virCPUDataNew(archs[0])))
+         goto cleanup;
+ 
+@@ -2432,6 +2440,7 @@ virCPUx86GetHost(virCPUDefPtr cpu,
+         goto cleanup;
+ 
+     ret = x86DecodeCPUData(cpu, cpuData, models);
++    cpu->microcodeVersion = microcodeVersion;
+ 
+  cleanup:
+     virCPUx86DataFree(cpuData);
+-- 
+2.15.1
+

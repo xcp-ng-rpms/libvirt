@@ -1,0 +1,118 @@
+From ae52a7777eae5936c68ffef6f84280adae80703b Mon Sep 17 00:00:00 2001
+Message-Id: <ae52a7777eae5936c68ffef6f84280adae80703b@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:20 +0100
+Subject: [PATCH] qemu: Require QEMU_CAPS_DEVICE_PL011 for pl011
+
+Even though we never format the device on the QEMU command line,
+as it's a platform serial device that's not user-instantiable,
+we should still make sure it's available before using it.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit b2fb483c34390b4c5eeff0304712cea0ace21d88)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c  | 12 ++++++++++++
+ tests/qemuxml2argvtest.c |  9 +++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 5c246698c0..18977480d9 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9236,6 +9236,7 @@ qemuChrSerialTargetModelToCaps(virDomainChrSerialTargetModel targetModel)
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPLMCONSOLE:
+         return QEMU_CAPS_DEVICE_SCLPLMCONSOLE;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011:
++        return QEMU_CAPS_DEVICE_PL011;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+         break;
+@@ -9328,6 +9329,17 @@ qemuBuildSerialCommandLine(virLogManagerPtr logManager,
+             if (qemuBuildChrDeviceCommandLine(cmd, def, serial, qemuCaps) < 0)
+                 return -1;
+         } else {
++            virQEMUCapsFlags caps;
++
++            caps = qemuChrSerialTargetModelToCaps(serial->targetModel);
++
++            if (caps && !virQEMUCapsGet(qemuCaps, caps)) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                               _("'%s' is not supported in this QEMU binary"),
++                               virDomainChrSerialTargetModelTypeToString(serial->targetModel));
++                return -1;
++            }
++
+             virCommandAddArg(cmd, "-serial");
+             virCommandAddArgFormat(cmd, "chardev:char%s", serial->info.alias);
+         }
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index b61cee74c7..77c9783929 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1922,10 +1922,13 @@ mymain(void)
+     DO_TEST_PARSE_ERROR("pseries-serial-invalid-machine", NONE);
+ 
+     DO_TEST("mach-virt-serial-native",
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("mach-virt-serial+console-native",
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("mach-virt-serial-compat",
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("mach-virt-serial-pci",
+             QEMU_CAPS_NODEFCONFIG,
+@@ -1943,6 +1946,7 @@ mymain(void)
+             QEMU_CAPS_DEVICE_QEMU_XHCI,
+             QEMU_CAPS_DEVICE_USB_SERIAL);
+     DO_TEST("mach-virt-console-native",
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_NODEFCONFIG);
+     DO_TEST("mach-virt-console-virtio",
+             QEMU_CAPS_NODEFCONFIG);
+@@ -2492,11 +2496,13 @@ mymain(void)
+     DO_TEST("arm-virt-virtio",
+             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_DTB,
+             QEMU_CAPS_DEVICE_VIRTIO_MMIO,
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_DEVICE_VIRTIO_RNG, QEMU_CAPS_OBJECT_RNG_RANDOM);
+ 
+     DO_TEST("aarch64-virt-virtio",
+             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_DTB,
+             QEMU_CAPS_DEVICE_VIRTIO_MMIO,
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_DEVICE_VIRTIO_RNG, QEMU_CAPS_OBJECT_RNG_RANDOM);
+ 
+     /* Demonstrates the virtio-pci default... namely that there isn't any!
+@@ -2512,6 +2518,7 @@ mymain(void)
+             QEMU_CAPS_PCI_MULTIFUNCTION,
+             QEMU_CAPS_DEVICE_DMI_TO_PCI_BRIDGE,
+             QEMU_CAPS_DEVICE_IOH3420,
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_VIRTIO_SCSI);
+     DO_TEST("aarch64-virt-2.6-virtio-pci-default",
+             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_DTB,
+@@ -2520,6 +2527,7 @@ mymain(void)
+             QEMU_CAPS_OBJECT_GPEX, QEMU_CAPS_DEVICE_PCI_BRIDGE,
+             QEMU_CAPS_PCI_MULTIFUNCTION,
+             QEMU_CAPS_DEVICE_DMI_TO_PCI_BRIDGE,
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_DEVICE_IOH3420);
+     /* Example of using virtio-pci with no explicit PCI controller
+        but with manual PCI addresses */
+@@ -2638,6 +2646,7 @@ mymain(void)
+             QEMU_CAPS_MACH_VIRT_GIC_VERSION);
+     DO_TEST("aarch64-kvm-32-on-64",
+             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_DEVICE_VIRTIO_MMIO,
++            QEMU_CAPS_DEVICE_PL011,
+             QEMU_CAPS_KVM, QEMU_CAPS_CPU_AARCH64_OFF);
+     DO_TEST_FAILURE("aarch64-kvm-32-on-64",
+             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_DEVICE_VIRTIO_MMIO,
+-- 
+2.15.1
+

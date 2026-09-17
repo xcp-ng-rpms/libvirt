@@ -1,0 +1,36 @@
+From 824141ce272f8b145df41554266697151895b8a7 Mon Sep 17 00:00:00 2001
+Message-Id: <824141ce272f8b145df41554266697151895b8a7@dist-git>
+From: Julio Faracco <jcfaracco@gmail.com>
+Date: Wed, 3 Jan 2018 16:06:35 +0100
+Subject: [PATCH] storage: Fixing missing 'backingStore' tag from volume XML
+ dumps.
+
+After commit a693fdb 'vol-dumpxml' missed the ability to show backingStore
+information. This commit adds a volume type for files that fixes this
+problem.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1529663
+
+Signed-off-by: Julio Faracco <jcfaracco@gmail.com>
+(cherry picked from commit d0307a9a766f1eb0f24ad2cc7c7ae730f1bde966)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/storage/storage_util.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/storage/storage_util.c b/src/storage/storage_util.c
+index 899a557588..9e1b63a436 100644
+--- a/src/storage/storage_util.c
++++ b/src/storage/storage_util.c
+@@ -1957,6 +1957,8 @@ virStorageBackendUpdateVolTargetInfoFD(virStorageSourcePtr target,
+     target->timestamps->ctime = get_stat_ctime(sb);
+     target->timestamps->mtime = get_stat_mtime(sb);
+ 
++    target->type = VIR_STORAGE_TYPE_FILE;
++
+     VIR_FREE(target->perms->label);
+ 
+ #if WITH_SELINUX
+-- 
+2.15.1
+

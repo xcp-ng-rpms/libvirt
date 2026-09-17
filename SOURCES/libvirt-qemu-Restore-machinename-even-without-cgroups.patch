@@ -1,0 +1,53 @@
+From 50bfc7b26b1a45d34ff8f62febbd59d6be9fb02c Mon Sep 17 00:00:00 2001
+Message-Id: <50bfc7b26b1a45d34ff8f62febbd59d6be9fb02c@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:43 +0100
+Subject: [PATCH] qemu: Restore machinename even without cgroups
+
+The virresctrl will use this as well and we need to have that info after restart
+to properly clean up /sys/fs/resctrl.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 272649a1d7b4c6a9f5c355a3b3e2a49b748e0f4d)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_cgroup.c  | 4 ----
+ src/qemu/qemu_process.c | 4 ++++
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/qemu/qemu_cgroup.c b/src/qemu/qemu_cgroup.c
+index 19252ea239..41e27c21e2 100644
+--- a/src/qemu/qemu_cgroup.c
++++ b/src/qemu/qemu_cgroup.c
+@@ -986,10 +986,6 @@ qemuConnectCgroup(virDomainObjPtr vm)
+     if (!virCgroupAvailable())
+         goto done;
+ 
+-    priv->machineName = qemuDomainGetMachineName(vm);
+-    if (!priv->machineName)
+-            goto cleanup;
+-
+     virCgroupFree(&priv->cgroup);
+ 
+     if (virCgroupNewDetectMachine(vm->def->name,
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 29a8d8ba53..08081aa278 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -7194,6 +7194,10 @@ qemuProcessReconnect(void *opaque)
+     if (qemuHostdevUpdateActiveDomainDevices(driver, obj->def) < 0)
+         goto error;
+ 
++    priv->machineName = qemuDomainGetMachineName(obj);
++    if (!priv->machineName)
++        goto error;
++
+     if (qemuConnectCgroup(obj) < 0)
+         goto error;
+ 
+-- 
+2.16.1
+

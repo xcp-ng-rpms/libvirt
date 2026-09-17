@@ -1,0 +1,40 @@
+From 3860c41885fc2365dd10559dbc6c721265673a36 Mon Sep 17 00:00:00 2001
+Message-Id: <3860c41885fc2365dd10559dbc6c721265673a36@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Wed, 14 Mar 2018 08:18:44 +0100
+Subject: [PATCH] conf: Check for user aliases duplicates only
+
+RHEL-7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1553162
+RHEL-7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1554962
+
+When validating a device XML config we check if user provided
+alias is unique. We do this by maintaining a hash table of device
+aliases as we iterated over all devices defined for the domain.
+However, it may happen that what appears as two devices in domain
+XML is in fact just one interface in hypervisor.  We can assume
+libvirt generated aliases to be unique and thus really check user
+provided ones only.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit e43263601fe27feb8d005668528f35f75428b8c6)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+---
+ src/conf/domain_conf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index c746ab19cd..a0c0702a6c 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -5560,7 +5560,7 @@ virDomainDeviceDefValidateAliasesIterator(virDomainDefPtr def,
+     struct virDomainDefValidateAliasesData *data = opaque;
+     const char *alias = info->alias;
+ 
+-    if (!alias)
++    if (!alias || !virDomainDeviceAliasIsUserAlias(alias))
+         return 0;
+ 
+     /* Some crazy backcompat for consoles. */
+-- 
+2.16.2
+

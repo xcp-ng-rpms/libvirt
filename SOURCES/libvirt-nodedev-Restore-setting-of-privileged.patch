@@ -1,0 +1,36 @@
+From be8c0df9c361446003821c35af1531187d0080b9 Mon Sep 17 00:00:00 2001
+Message-Id: <be8c0df9c361446003821c35af1531187d0080b9@dist-git>
+From: John Ferlan <jferlan@redhat.com>
+Date: Fri, 24 Nov 2017 12:13:52 -0500
+Subject: [PATCH] nodedev: Restore setting of privileged
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1517372
+
+Commit id '36555364' removed the setting of the driver->privileged,
+which the udevProcessPCI would need in order to read the PCI device
+configs.
+
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 9bfcf3ccdd2a0bb599dff27f97d5c1524cba1b79)
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/node_device/node_device_udev.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/node_device/node_device_udev.c b/src/node_device/node_device_udev.c
+index d48334b857..ed012200f5 100644
+--- a/src/node_device/node_device_udev.c
++++ b/src/node_device/node_device_udev.c
+@@ -1933,6 +1933,8 @@ nodeStateInitialize(bool privileged,
+         return -1;
+     }
+ 
++    driver->privileged = privileged;
++
+     if (!(driver->devs = virNodeDeviceObjListNew()) ||
+         !(priv = udevEventDataNew()))
+         goto cleanup;
+-- 
+2.15.1
+

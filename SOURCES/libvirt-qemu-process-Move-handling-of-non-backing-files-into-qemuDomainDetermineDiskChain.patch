@@ -1,0 +1,88 @@
+From 3ad4635badd77642d59d3789286da72abb66ee72 Mon Sep 17 00:00:00 2001
+Message-Id: <3ad4635badd77642d59d3789286da72abb66ee72@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 1 Dec 2017 15:57:02 +0100
+Subject: [PATCH] qemu: process: Move handling of non-backing files into
+ qemuDomainDetermineDiskChain
+
+Until now we would skip loading of the backing chain for files which
+don't support backing chains only when starting up the VM. Move the
+check from qemuProcessPrepareHostStorage with some adaptations so that's
+always applied.
+
+(cherry picked from commit 24e47ee2b93312742f73a785b9ca788df4677749)
+
+ Conflicts:
+	src/qemu/qemu_domain.c:
+        - since quite lot of the blockdev saga was not backported and
+        the previous commit is different this one does not apply as
+        well.
+
+        The changes are to accomodate the not-backported change in
+        return code logic of qemuDomainDetermineDiskChain which in this
+        instance initializes ret to 0 instead of -1, which was changed
+        in a patch that was not backported.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509110
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c  | 17 +++++++++++++++++
+ src/qemu/qemu_process.c | 10 ----------
+ 2 files changed, 17 insertions(+), 10 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 13d120040b..33cb3df949 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -6358,6 +6358,23 @@ qemuDomainDetermineDiskChain(virQEMUDriverPtr driver,
+     if (force_probe)
+         virStorageSourceBackingStoreClear(disk->src);
+ 
++    /* There is no need to check the backing chain for disks without backing
++     * support */
++    if (virStorageSourceIsLocalStorage(disk->src) &&
++        disk->src->format > VIR_STORAGE_FILE_NONE &&
++        disk->src->format < VIR_STORAGE_FILE_BACKING) {
++
++        if (!virFileExists(disk->src->path)) {
++            if (report_broken)
++                virStorageFileReportBrokenChain(errno, disk->src, disk->src);
++
++            ret = -1;
++            goto cleanup;
++        }
++
++        goto cleanup;
++    }
++
+     if (virStorageSourceHasBacking(disk->src))
+         goto cleanup;
+ 
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index f7808227a8..91426ad3c3 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -5554,20 +5554,10 @@ qemuProcessPrepareHostStorage(virQEMUDriverPtr driver,
+     for (i = vm->def->ndisks; i > 0; i--) {
+         size_t idx = i - 1;
+         virDomainDiskDefPtr disk = vm->def->disks[idx];
+-        virStorageFileFormat format = virDomainDiskGetFormat(disk);
+ 
+         if (virStorageSourceIsEmpty(disk->src))
+             continue;
+ 
+-        /* There is no need to check the backing chain for disks
+-         * without backing support, the fact that the file exists is
+-         * more than enough */
+-        if (virStorageSourceIsLocalStorage(disk->src) &&
+-            format > VIR_STORAGE_FILE_NONE &&
+-            format < VIR_STORAGE_FILE_BACKING &&
+-            virFileExists(virDomainDiskGetSource(disk)))
+-            continue;
+-
+         if (qemuDomainDetermineDiskChain(driver, vm, disk, true, true) >= 0)
+             continue;
+ 
+-- 
+2.15.1
+

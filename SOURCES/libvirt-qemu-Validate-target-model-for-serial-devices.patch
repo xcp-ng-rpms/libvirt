@@ -1,0 +1,99 @@
+From 37bf217cd53b115427999d5421dca30eb472616c Mon Sep 17 00:00:00 2001
+Message-Id: <37bf217cd53b115427999d5421dca30eb472616c@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:09 +0100
+Subject: [PATCH] qemu: Validate target model for serial devices
+
+Target model and target type must agree for the configuration
+to make sense, so check that's actually the case and error out
+otherwise.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit a9254a2d6e9db1030350ff562b9ea91494143aa9)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/libvirt_private.syms |  2 ++
+ src/qemu/qemu_domain.c   | 41 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 65b1143c9b..ecf7036dff 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -209,6 +209,8 @@ virDomainChrGetDomainPtrs;
+ virDomainChrInsertPreAlloced;
+ virDomainChrPreAlloc;
+ virDomainChrRemove;
++virDomainChrSerialTargetModelTypeFromString;
++virDomainChrSerialTargetModelTypeToString;
+ virDomainChrSerialTargetTypeFromString;
+ virDomainChrSerialTargetTypeToString;
+ virDomainChrSourceDefClear;
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index a8a91de2fe..7b5bc97de6 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3475,6 +3475,25 @@ qemuDomainChrSerialTargetTypeToAddressType(int targetType)
+ }
+ 
+ 
++static int
++qemuDomainChrSerialTargetModelToTargetType(int targetModel)
++{
++    switch ((virDomainChrSerialTargetModel) targetModel) {
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
++        break;
++    }
++
++    return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
++}
++
++
+ static int
+ qemuDomainChrTargetDefValidate(const virDomainDef *def,
+                                const virDomainChrDef *chr)
+@@ -3511,6 +3530,28 @@ qemuDomainChrTargetDefValidate(const virDomainDef *def,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             break;
+         }
++
++        /* Validate target model */
++        switch ((virDomainChrSerialTargetModel) chr->targetModel) {
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
++
++            expected = qemuDomainChrSerialTargetModelToTargetType(chr->targetModel);
++
++            if (chr->targetType != expected) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                               _("Target model '%s' requires target type '%s'"),
++                               virDomainChrSerialTargetModelTypeToString(chr->targetModel),
++                               virDomainChrSerialTargetTypeToString(expected));
++                return -1;
++            }
++            break;
++
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
++            break;
++        }
+         break;
+ 
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE:
+-- 
+2.15.1
+

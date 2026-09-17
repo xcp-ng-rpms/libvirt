@@ -1,0 +1,124 @@
+From fd11d55c30553c37d3d71d202348ac22029cba8d Mon Sep 17 00:00:00 2001
+Message-Id: <fd11d55c30553c37d3d71d202348ac22029cba8d@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 13 Apr 2018 10:09:29 +0200
+Subject: [PATCH] qemu: Use dynamic buffer for storing PTY aliases
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RHEL-7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1560976
+RHEL-7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1566525
+
+For historical reasons we've used 32 bytes long static buffer for
+storing PTY aliases. This breaks users scenario where they try to
+start a machine with user alias consisting of "ua-$uuid".
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit c4c32cb300beba41ecbca3ee4884c65630bde861)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+---
+ src/qemu/qemu_process.c | 39 ++++++++++++++++++++-------------------
+ 1 file changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index c86f7d3c5b..04147f381e 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -1931,21 +1931,18 @@ qemuProcessLookupPTYs(virDomainChrDefPtr *devices,
+                       int count,
+                       virHashTablePtr info)
+ {
++    char *id = NULL;
+     size_t i;
++    int ret = -1;
+ 
+     for (i = 0; i < count; i++) {
+         virDomainChrDefPtr chr = devices[i];
+         if (chr->source->type == VIR_DOMAIN_CHR_TYPE_PTY) {
+-            char id[32];
+             qemuMonitorChardevInfoPtr entry;
+ 
+-            if (snprintf(id, sizeof(id), "char%s",
+-                         chr->info.alias) >= sizeof(id)) {
+-                virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                               _("failed to format device alias "
+-                                 "for PTY retrieval"));
++            VIR_FREE(id);
++            if (virAsprintf(&id, "char%s", chr->info.alias) < 0)
+                 return -1;
+-            }
+ 
+             entry = virHashLookup(info, id);
+             if (!entry || !entry->ptyPath) {
+@@ -1955,7 +1952,7 @@ qemuProcessLookupPTYs(virDomainChrDefPtr *devices,
+                      */
+                     virReportError(VIR_ERR_INTERNAL_ERROR,
+                                    _("no assigned pty for device %s"), id);
+-                    return -1;
++                    goto cleanup;
+                 } else {
+                     /* 'info chardev' had no pty path for this chardev,
+                      * but the log output had, so we're fine
+@@ -1966,11 +1963,14 @@ qemuProcessLookupPTYs(virDomainChrDefPtr *devices,
+ 
+             VIR_FREE(chr->source->data.file.path);
+             if (VIR_STRDUP(chr->source->data.file.path, entry->ptyPath) < 0)
+-                return -1;
++                goto cleanup;
+         }
+     }
+ 
+-    return 0;
++    ret = 0;
++ cleanup:
++    VIR_FREE(id);
++    return ret;
+ }
+ 
+ static int
+@@ -2022,7 +2022,8 @@ qemuProcessRefreshChannelVirtioState(virQEMUDriverPtr driver,
+     int agentReason = VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_CHANNEL;
+     qemuMonitorChardevInfoPtr entry;
+     virObjectEventPtr event = NULL;
+-    char id[32];
++    char *id = NULL;
++    int ret = -1;
+ 
+     if (booted)
+         agentReason = VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_DOMAIN_STARTED;
+@@ -2030,13 +2031,10 @@ qemuProcessRefreshChannelVirtioState(virQEMUDriverPtr driver,
+     for (i = 0; i < vm->def->nchannels; i++) {
+         virDomainChrDefPtr chr = vm->def->channels[i];
+         if (chr->targetType == VIR_DOMAIN_CHR_CHANNEL_TARGET_TYPE_VIRTIO) {
+-            if (snprintf(id, sizeof(id), "char%s",
+-                         chr->info.alias) >= sizeof(id)) {
+-                virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                               _("failed to format device alias "
+-                                 "for PTY retrieval"));
+-                return -1;
+-            }
++
++            VIR_FREE(id);
++            if (virAsprintf(&id, "char%s", chr->info.alias) < 0)
++                goto cleanup;
+ 
+             /* port state not reported */
+             if (!(entry = virHashLookup(info, id)) ||
+@@ -2053,7 +2051,10 @@ qemuProcessRefreshChannelVirtioState(virQEMUDriverPtr driver,
+         }
+     }
+ 
+-    return 0;
++    ret = 0;
++ cleanup:
++    VIR_FREE(id);
++    return ret;
+ }
+ 
+ 
+-- 
+2.17.0
+

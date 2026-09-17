@@ -1,0 +1,50 @@
+From f0ec77f06f7f72d29748c2a04877ac97632ef63b Mon Sep 17 00:00:00 2001
+Message-Id: <f0ec77f06f7f72d29748c2a04877ac97632ef63b@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Mon, 13 Nov 2017 13:43:22 +0100
+Subject: [PATCH] qemu: domain: Don't allocate storage source private data if
+ not needed
+
+(cherry picked from commit 2c82fddca93ea83736260a5a90040fb5fa391e9a)
+https://bugzilla.redhat.com/show_bug.cgi?id=1510323
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 27117d83ef..81f45516af 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -1385,13 +1385,18 @@ qemuDomainSecretDiskPrepare(virConnectPtr conn,
+ {
+     virStorageSourcePtr src = disk->src;
+     qemuDomainStorageSourcePrivatePtr srcPriv;
++    bool hasAuth = qemuDomainSecretDiskCapable(src);
++    bool hasEnc = qemuDomainDiskHasEncryptionSecret(src);
++
++    if (!hasAuth && !hasEnc)
++        return 0;
+ 
+     if (!(disk->src->privateData = qemuDomainStorageSourcePrivateNew()))
+         return -1;
+ 
+     srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
+ 
+-    if (qemuDomainSecretDiskCapable(src)) {
++    if (hasAuth) {
+         virSecretUsageType usageType = VIR_SECRET_USAGE_TYPE_ISCSI;
+ 
+         if (src->protocol == VIR_STORAGE_NET_PROTOCOL_RBD)
+@@ -1404,7 +1409,7 @@ qemuDomainSecretDiskPrepare(virConnectPtr conn,
+               return -1;
+     }
+ 
+-    if (qemuDomainDiskHasEncryptionSecret(src)) {
++    if (hasEnc) {
+         if (!(srcPriv->encinfo =
+               qemuDomainSecretInfoNew(conn, priv, disk->info.alias,
+                                       VIR_SECRET_USAGE_TYPE_VOLUME, NULL,
+-- 
+2.15.0
+

@@ -1,0 +1,131 @@
+From af86f99a7745f9d54c3f4e42f58130478e6aa9f5 Mon Sep 17 00:00:00 2001
+Message-Id: <af86f99a7745f9d54c3f4e42f58130478e6aa9f5@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:26 +0100
+Subject: [PATCH] conf: Use virResctrlInfo in capabilities
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 3bbae43d8cc79ef1cd0b9a4ea2440203a0edc959)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/conf/capabilities.c | 53 ++++++++++++++++++++++++-------------------------
+ src/conf/capabilities.h |  2 ++
+ 2 files changed, 28 insertions(+), 27 deletions(-)
+
+diff --git a/src/conf/capabilities.c b/src/conf/capabilities.c
+index e93eaed2f0..edf9f54f77 100644
+--- a/src/conf/capabilities.c
++++ b/src/conf/capabilities.c
+@@ -245,6 +245,7 @@ virCapabilitiesDispose(void *object)
+     VIR_FREE(caps->host.netprefix);
+     VIR_FREE(caps->host.pagesSize);
+     virCPUDefFree(caps->host.cpu);
++    virObjectUnref(caps->host.resctrl);
+ }
+ 
+ /**
+@@ -1592,6 +1593,20 @@ virCapsHostCacheBankSorter(const void *a,
+ }
+ 
+ 
++static int
++virCapabilitiesInitResctrl(virCapsPtr caps)
++{
++    if (caps->host.resctrl)
++        return 0;
++
++    caps->host.resctrl = virResctrlInfoNew();
++    if (!caps->host.resctrl)
++        return -1;
++
++    return virResctrlGetInfo(caps->host.resctrl);
++}
++
++
+ int
+ virCapabilitiesInitCaches(virCapsPtr caps)
+ {
+@@ -1600,7 +1615,6 @@ virCapabilitiesInitCaches(virCapsPtr caps)
+     ssize_t pos = -1;
+     DIR *dirp = NULL;
+     int ret = -1;
+-    int typeret;
+     char *path = NULL;
+     char *type = NULL;
+     struct dirent *ent = NULL;
+@@ -1611,6 +1625,9 @@ virCapabilitiesInitCaches(virCapsPtr caps)
+      * lose information. */
+     const int cache_min_level = 3;
+ 
++    if (virCapabilitiesInitResctrl(caps) < 0)
++        return -1;
++
+     /* offline CPUs don't provide cache info */
+     if (virFileReadValueBitmap(&cpus, "%s/cpu/online", SYSFS_SYSTEM_PATH) < 0)
+         return -1;
+@@ -1676,32 +1693,6 @@ virCapabilitiesInitCaches(virCapsPtr caps)
+                                        SYSFS_SYSTEM_PATH, pos, ent->d_name) < 0)
+                 goto cleanup;
+ 
+-            typeret = virResctrlGetCacheControlType(bank->level);
+-            if (typeret < 0)
+-                goto cleanup;
+-
+-            if (typeret == 1) {
+-                if (virResctrlGetCacheInfo(bank->level,
+-                                           bank->size,
+-                                           VIR_CACHE_TYPE_BOTH,
+-                                           &bank->controls,
+-                                           &bank->ncontrols) < 0)
+-                    goto cleanup;
+-            } else if (typeret == 2) {
+-                if (virResctrlGetCacheInfo(bank->level,
+-                                           bank->size,
+-                                           VIR_CACHE_TYPE_CODE,
+-                                           &bank->controls,
+-                                           &bank->ncontrols) < 0)
+-                    goto cleanup;
+-                if (virResctrlGetCacheInfo(bank->level,
+-                                           bank->size,
+-                                           VIR_CACHE_TYPE_DATA,
+-                                           &bank->controls,
+-                                           &bank->ncontrols) < 0)
+-                    goto cleanup;
+-            }
+-
+             kernel_type = virCacheKernelTypeFromString(type);
+             if (kernel_type < 0) {
+                 virReportError(VIR_ERR_INTERNAL_ERROR,
+@@ -1717,6 +1708,14 @@ virCapabilitiesInitCaches(virCapsPtr caps)
+                     break;
+             }
+             if (i == caps->host.ncaches) {
++                /* If it is a new cache, then update its resctrl information. */
++                if (virResctrlInfoGetCache(caps->host.resctrl,
++                                           bank->level,
++                                           bank->size,
++                                           &bank->ncontrols,
++                                           &bank->controls) < 0)
++                    goto cleanup;
++
+                 if (VIR_APPEND_ELEMENT(caps->host.caches,
+                                        caps->host.ncaches,
+                                        bank) < 0) {
+diff --git a/src/conf/capabilities.h b/src/conf/capabilities.h
+index 27b88cb5ed..694a3590bf 100644
+--- a/src/conf/capabilities.h
++++ b/src/conf/capabilities.h
+@@ -170,6 +170,8 @@ struct _virCapsHost {
+     size_t nnumaCell_max;
+     virCapsHostNUMACellPtr *numaCell;
+ 
++    virResctrlInfoPtr resctrl;
++
+     size_t ncaches;
+     virCapsHostCacheBankPtr *caches;
+ 
+-- 
+2.16.1
+

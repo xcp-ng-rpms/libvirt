@@ -1,0 +1,67 @@
+From 60d285eca3ab7003a7ebd03e3610616e0a657942 Mon Sep 17 00:00:00 2001
+Message-Id: <60d285eca3ab7003a7ebd03e3610616e0a657942@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 20 Nov 2017 11:08:51 +0100
+Subject: [PATCH] qemuBuildDriveDevStr: Prefer default aliases for IDE bus
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1434451
+
+When testing user aliases it was discovered that for 440fx
+machine type which has default IDE bus builtin, domain cannot
+start if IDE controller has the user provided alias. This is
+because for 440fx we don't put the IDE controller onto the
+command line (since it is builtin) and therefore any device that
+is plugged onto the bus must use the default alias.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 9324f67a572f9b32f25bc088fb9f34e736edc612)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c                               | 14 +++++++++++---
+ tests/qemuxml2argvdata/qemuxml2argv-user-aliases.args |  4 ++--
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index aa7079229f..272ef610a3 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -1947,9 +1947,17 @@ qemuBuildDriveDevStr(const virDomainDef *def,
+             virBufferAddLit(&opt, "ide-drive");
+         }
+ 
+-        if (!(contAlias = virDomainControllerAliasFind(def, VIR_DOMAIN_CONTROLLER_TYPE_IDE,
+-                                                       disk->info.addr.drive.controller)))
+-           goto error;
++        /* When domain has builtin IDE controller we don't put it onto cmd
++         * line. Therefore we can't set its alias. In that case, use the
++         * default one. */
++        if (qemuDomainHasBuiltinIDE(def)) {
++            contAlias = "ide";
++        } else {
++            if (!(contAlias = virDomainControllerAliasFind(def,
++                                                           VIR_DOMAIN_CONTROLLER_TYPE_IDE,
++                                                           disk->info.addr.drive.controller)))
++                goto error;
++        }
+         virBufferAsprintf(&opt, ",bus=%s.%d,unit=%d",
+                           contAlias,
+                           disk->info.addr.drive.bus,
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.args b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.args
+index 62fbd567b1..1719c1bc88 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.args
+@@ -44,8 +44,8 @@ id=drive-ua-myEncryptedDisk1 \
+ id=ua-myEncryptedDisk1 \
+ -drive file=/home/zippy/tmp/install-amd64-minimal-20140619.iso,format=raw,\
+ if=none,media=cdrom,id=drive-ua-WhatAnAwesomeCDROM,readonly=on,cache=none \
+--device ide-drive,bus=ua-DoesAnybodyStillUseIDE.1,unit=0,\
+-drive=drive-ua-WhatAnAwesomeCDROM,id=ua-WhatAnAwesomeCDROM \
++-device ide-drive,bus=ide.1,unit=0,drive=drive-ua-WhatAnAwesomeCDROM,\
++id=ua-WhatAnAwesomeCDROM \
+ -device virtio-net-pci,vlan=0,id=ua-CheckoutThisNIC,mac=52:54:00:d6:c0:0b,\
+ bus=pci.0,addr=0x3 \
+ -net tap,fd=3,vlan=0,name=hostua-CheckoutThisNIC \
+-- 
+2.15.0
+

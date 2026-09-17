@@ -1,0 +1,57 @@
+From a1c433306e79ec6b5c0ca4b3e3243875ccabdeb2 Mon Sep 17 00:00:00 2001
+Message-Id: <a1c433306e79ec6b5c0ca4b3e3243875ccabdeb2@dist-git>
+From: Pavel Hrdina <phrdina@redhat.com>
+Date: Thu, 30 Nov 2017 17:56:41 +0100
+Subject: [PATCH] conf: fix migratable XML for graphics if socket is generated
+ based on config
+
+The graphics code is complex and there are a lot of exceptions and
+backward compatible combinations.  One of them is the possibility
+to configure "spice_auto_unix_socket" in qemu.conf which will convert
+all spice graphics with listen type "address" without any address
+specified to listen type "socket" when the guest is started.
+
+We don't format this generated socket into migratable XML to make
+migration work with older libvirt.  However, spice has another
+exception that if autoport='no' and there is no port configured
+it is converted to listen type "none".  Because of this we need
+to format autoport='yes' to make sure that the listen type will
+be the same as the offline XML.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1511407
+
+Reviewed-by: Jiri Denemark <jdenemar@redhat.com>
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit cb06ea57ad80a964028f22fb49d6ab96648ae741)
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index c58dae197c..ec138ea861 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -25150,6 +25150,18 @@ virDomainGraphicsDefFormat(virBufferPtr buf,
+             break;
+ 
+         case VIR_DOMAIN_GRAPHICS_LISTEN_TYPE_SOCKET:
++            /* If socket is auto-generated based on config option we don't
++             * add any listen element into migratable XML because the original
++             * listen type is "address".
++             * We need to set autoport to make sure that libvirt on destination
++             * will parse it as listen type "address", without autoport it is
++             * parsed as listen type "none". */
++            if ((flags & VIR_DOMAIN_DEF_FORMAT_MIGRATABLE) &&
++                glisten->fromConfig) {
++                virBufferAddStr(buf, " autoport='yes'");
++            }
++            break;
++
+         case VIR_DOMAIN_GRAPHICS_LISTEN_TYPE_LAST:
+             break;
+         }
+-- 
+2.15.1
+

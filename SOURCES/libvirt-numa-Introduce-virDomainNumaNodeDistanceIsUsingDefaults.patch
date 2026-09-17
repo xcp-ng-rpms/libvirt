@@ -1,0 +1,84 @@
+From 8af3d229190faed68beda2a1493badc1eb78e108 Mon Sep 17 00:00:00 2001
+Message-Id: <8af3d229190faed68beda2a1493badc1eb78e108@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 4 Dec 2017 13:38:50 +0100
+Subject: [PATCH] numa: Introduce virDomainNumaNodeDistanceIsUsingDefaults
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1454889
+
+The function returns true/false depending on distance
+configuration being present in the domain XML.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit ab9baab7290a4a009e4e8ddfb63a2ddd19bb8091)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/numa_conf.c     | 21 +++++++++++++++++++++
+ src/conf/numa_conf.h     |  4 ++++
+ src/libvirt_private.syms |  1 +
+ 3 files changed, 26 insertions(+)
+
+diff --git a/src/conf/numa_conf.c b/src/conf/numa_conf.c
+index c2f0d1ca8c..8fc3b0a196 100644
+--- a/src/conf/numa_conf.c
++++ b/src/conf/numa_conf.c
+@@ -1137,6 +1137,27 @@ virDomainNumaSetNodeCount(virDomainNumaPtr numa, size_t nmem_nodes)
+     return numa->nmem_nodes;
+ }
+ 
++
++bool
++virDomainNumaNodeDistanceIsUsingDefaults(virDomainNumaPtr numa,
++                                         size_t node,
++                                         size_t sibling)
++{
++    if (node >= numa->nmem_nodes ||
++        sibling >= numa->nmem_nodes)
++        return false;
++
++    if (!numa->mem_nodes[node].distances)
++        return true;
++
++    if (numa->mem_nodes[node].distances[sibling].value == LOCAL_DISTANCE ||
++        numa->mem_nodes[node].distances[sibling].value == REMOTE_DISTANCE)
++        return true;
++
++    return false;
++}
++
++
+ size_t
+ virDomainNumaGetNodeDistance(virDomainNumaPtr numa,
+                              size_t node,
+diff --git a/src/conf/numa_conf.h b/src/conf/numa_conf.h
+index 4655de3aa7..7947fdb219 100644
+--- a/src/conf/numa_conf.h
++++ b/src/conf/numa_conf.h
+@@ -87,6 +87,10 @@ int virDomainNumatuneMaybeGetNodeset(virDomainNumaPtr numatune,
+ 
+ size_t virDomainNumaGetNodeCount(virDomainNumaPtr numa);
+ 
++bool virDomainNumaNodeDistanceIsUsingDefaults(virDomainNumaPtr numa,
++                                              size_t node,
++                                              size_t sibling)
++    ATTRIBUTE_NONNULL(1);
+ size_t virDomainNumaGetNodeDistance(virDomainNumaPtr numa,
+                                     size_t node,
+                                     size_t sibling)
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 19543e06ae..0449b0185f 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -727,6 +727,7 @@ virDomainNumaGetNodeDistance;
+ virDomainNumaGetNodeMemoryAccessMode;
+ virDomainNumaGetNodeMemorySize;
+ virDomainNumaNew;
++virDomainNumaNodeDistanceIsUsingDefaults;
+ virDomainNumaSetNodeCount;
+ virDomainNumaSetNodeCpumask;
+ virDomainNumaSetNodeDistance;
+-- 
+2.15.1
+

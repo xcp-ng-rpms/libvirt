@@ -1,0 +1,81 @@
+From 57dd2427239f4de91c9735b1fa299d08d11a8dac Mon Sep 17 00:00:00 2001
+Message-Id: <57dd2427239f4de91c9735b1fa299d08d11a8dac@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 20 Nov 2017 11:08:54 +0100
+Subject: [PATCH] qemuBuildDeviceAddressStr: Prefer default alias for PCI bus
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1434451
+
+Just like in 9324f67a572f9b32 we need to put default pci-root
+alias onto the command line instead of the one provided by user.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 937f319536723fec57ad472b002a159d0f67a77c)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c                            | 30 ++++++++++++++++------
+ .../qemuxml2argvdata/qemuxml2argv-user-aliases.xml |  4 ++-
+ 2 files changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 7dc7387a15..dfacff4b12 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -318,16 +318,30 @@ qemuBuildDeviceAddressStr(virBufferPtr buf,
+ 
+             if (cont->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI &&
+                 cont->idx == info->addr.pci.bus) {
+-                contAlias = cont->info.alias;
+                 contIsPHB = virDomainControllerIsPSeriesPHB(cont);
+                 contTargetIndex = cont->opts.pciopts.targetIndex;
+-                if (!contAlias) {
+-                    virReportError(VIR_ERR_INTERNAL_ERROR,
+-                                   _("Device alias was not set for PCI "
+-                                     "controller with index %u required "
+-                                     "for device at address %s"),
+-                                   info->addr.pci.bus, devStr);
+-                    goto cleanup;
++
++                /* When domain has builtin pci-root controller we don't put it
++                 * onto cmd line. Therefore we can't set its alias. In that
++                 * case, use the default one. */
++                if (!qemuDomainIsPSeries(domainDef) &&
++                    cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
++                    if (virQEMUCapsHasPCIMultiBus(qemuCaps, domainDef))
++                        contAlias = "pci.0";
++                    else
++                        contAlias = "pci";
++                } else if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) {
++                    contAlias = "pcie.0";
++                } else {
++                    contAlias = cont->info.alias;
++                    if (!contAlias) {
++                        virReportError(VIR_ERR_INTERNAL_ERROR,
++                                       _("Device alias was not set for PCI "
++                                         "controller with index %u required "
++                                         "for device at address %s"),
++                                       info->addr.pci.bus, devStr);
++                        goto cleanup;
++                    }
+                 }
+                 break;
+             }
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
+index d1cb8fea6f..c760098fe0 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
++++ b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
+@@ -74,7 +74,9 @@
+       <alias name='ua-SomeWeirdController'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+     </controller>
+-    <controller type='pci' index='0' model='pci-root'/>
++    <controller type='pci' index='0' model='pci-root'>
++      <alias name='ua-MyPCIRootController'/>
++    </controller>
+     <controller type='ide' index='0'>
+       <alias name='ua-DoesAnybodyStillUseIDE'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+-- 
+2.15.0
+

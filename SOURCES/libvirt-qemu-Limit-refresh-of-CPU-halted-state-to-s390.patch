@@ -1,0 +1,37 @@
+From bda9cc7585816a5233beba2661510ecc4d69c4e2 Mon Sep 17 00:00:00 2001
+Message-Id: <bda9cc7585816a5233beba2661510ecc4d69c4e2@dist-git>
+From: Viktor Mihajlovski <mihajlov@linux.vnet.ibm.com>
+Date: Wed, 7 Feb 2018 14:16:02 +0100
+Subject: [PATCH] qemu: Limit refresh of CPU halted state to s390
+
+Refreshing the halted state can cause VM performance issues. Since
+s390 is currently the only architecture with a known interest in
+the halted state, we're avoiding to call QEMU on other platforms.
+
+Signed-off-by: Viktor Mihajlovski <mihajlov@linux.vnet.ibm.com>
+(cherry picked from commit 818a29e0c7d6840e87e9ca6019b9f0bc1983566e)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1534585
+---
+ src/qemu/qemu_domain.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index e87c7d030c..0f7f3b7f50 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -7989,6 +7989,11 @@ qemuDomainRefreshVcpuHalted(virQEMUDriverPtr driver,
+     if (vm->def->virtType == VIR_DOMAIN_VIRT_QEMU)
+         return 0;
+ 
++    /* The halted state is interresting only on s390(x). On other platforms
++     * the data would be stale at the time when it would be used. */
++    if (!ARCH_IS_S390(vm->def->os.arch))
++        return 0;
++
+     if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+         return -1;
+ 
+-- 
+2.16.1
+

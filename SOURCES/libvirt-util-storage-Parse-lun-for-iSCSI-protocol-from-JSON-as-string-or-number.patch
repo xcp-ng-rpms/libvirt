@@ -1,0 +1,85 @@
+From 9356d615ccbbb556a11d70a01941964b1af7d503 Mon Sep 17 00:00:00 2001
+Message-Id: <9356d615ccbbb556a11d70a01941964b1af7d503@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Wed, 31 Jan 2018 12:51:00 +0100
+Subject: [PATCH] util: storage: Parse 'lun' for iSCSI protocol from JSON as
+ string or number
+
+While the QEMU QAPI schema describes 'lun' as a number, the code dealing
+with JSON strings does not strictly adhere to this schema and thus
+formats the number back as a string. Use the new helper to retrieve both
+possibilities.
+
+Note that the formatting code is okay and qemu will accept it as an int.
+
+Tweak also one of the test strings to verify that both formats work
+with libvirt.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1540290
+(cherry picked from commit f46d6e22f2dc352cd43480c1d148222f4e62b8e6)
+---
+ src/util/virstoragefile.c | 13 +++++--------
+ tests/virstoragetest.c    |  2 +-
+ 2 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/src/util/virstoragefile.c b/src/util/virstoragefile.c
+index d1e356a121..69deaea7c5 100644
+--- a/src/util/virstoragefile.c
++++ b/src/util/virstoragefile.c
+@@ -2966,10 +2966,9 @@ virStorageSourceParseBackingJSONiSCSI(virStorageSourcePtr src,
+     const char *transport = virJSONValueObjectGetString(json, "transport");
+     const char *portal = virJSONValueObjectGetString(json, "portal");
+     const char *target = virJSONValueObjectGetString(json, "target");
++    const char *lun = virJSONValueObjectGetStringOrNumber(json, "lun");
+     const char *uri;
+     char *port;
+-    unsigned int lun = 0;
+-    char *fulltarget = NULL;
+     int ret = -1;
+ 
+     /* legacy URI based syntax passed via 'filename' option */
+@@ -2980,6 +2979,9 @@ virStorageSourceParseBackingJSONiSCSI(virStorageSourcePtr src,
+     src->type = VIR_STORAGE_TYPE_NETWORK;
+     src->protocol = VIR_STORAGE_NET_PROTOCOL_ISCSI;
+ 
++    if (!lun)
++        lun = "0";
++
+     if (VIR_ALLOC(src->hosts) < 0)
+         goto cleanup;
+ 
+@@ -3015,17 +3017,12 @@ virStorageSourceParseBackingJSONiSCSI(virStorageSourcePtr src,
+         *port = '\0';
+     }
+ 
+-    ignore_value(virJSONValueObjectGetNumberUint(json, "lun", &lun));
+-
+-    if (virAsprintf(&fulltarget, "%s/%u", target, lun) < 0)
++    if (virAsprintf(&src->path, "%s/%s", target, lun) < 0)
+         goto cleanup;
+ 
+-    VIR_STEAL_PTR(src->path, fulltarget);
+-
+     ret = 0;
+ 
+  cleanup:
+-    VIR_FREE(fulltarget);
+     return ret;
+ }
+ 
+diff --git a/tests/virstoragetest.c b/tests/virstoragetest.c
+index bdd0829c21..b7f2eeb96d 100644
+--- a/tests/virstoragetest.c
++++ b/tests/virstoragetest.c
+@@ -1572,7 +1572,7 @@ mymain(void)
+                                        "\"transport\":\"tcp\","
+                                        "\"portal\":\"test.org:1234\","
+                                        "\"target\":\"iqn.2016-12.com.virttest:emulated-iscsi-noauth.target\","
+-                                       "\"lun\":6"
++                                       "\"lun\":\"6\""
+                                       "}"
+                             "}",
+                        "<source protocol='iscsi' name='iqn.2016-12.com.virttest:emulated-iscsi-noauth.target/6'>\n"
+-- 
+2.16.1
+

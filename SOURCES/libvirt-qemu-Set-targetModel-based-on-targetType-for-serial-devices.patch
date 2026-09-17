@@ -1,0 +1,820 @@
+From 09ae09618f6b4f7728b380ea1a9ee7f8ab681877 Mon Sep 17 00:00:00 2001
+Message-Id: <09ae09618f6b4f7728b380ea1a9ee7f8ab681877@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:08 +0100
+Subject: [PATCH] qemu: Set targetModel based on targetType for serial devices
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 72bf21f23357d2b3d37b4b1b5611d6a5f5dc663e)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c                               | 20 ++++++++++++++++++++
+ .../qemuargv2xmldata/qemuargv2xml-console-compat.xml |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-dev.xml   |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-file.xml  |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-many.xml  |  8 ++++++--
+ tests/qemuargv2xmldata/qemuargv2xml-serial-pty.xml   |  4 +++-
+ .../qemuargv2xml-serial-tcp-telnet.xml               |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-tcp.xml   |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-udp.xml   |  8 ++++++--
+ tests/qemuargv2xmldata/qemuargv2xml-serial-unix.xml  |  4 +++-
+ tests/qemuargv2xmldata/qemuargv2xml-serial-vc.xml    |  4 +++-
+ ...uhotplug-console-compat-2-live+console-virtio.xml | 12 +++++++++---
+ .../qemuhotplug-console-compat-2-live.xml            | 12 +++++++++---
+ ...qemuxml2argv-serial-tcp-tlsx509-chardev-notls.xml |  8 ++++++--
+ tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml |  8 ++++++--
+ .../qemuxml2xmlout-aarch64-pci-serial.xml            |  4 +++-
+ .../qemuxml2xmlout-bios-nvram-os-interleave.xml      |  4 +++-
+ .../qemuxml2xmlout-chardev-label.xml                 |  8 ++++++--
+ .../qemuxml2xmlout-console-compat-auto.xml           |  4 +++-
+ .../qemuxml2xmlout-console-compat.xml                |  4 +++-
+ .../qemuxml2xmlout-console-compat2.xml               |  4 +++-
+ .../qemuxml2xmlout-console-virtio-many.xml           |  4 +++-
+ .../qemuxml2xmlout-interface-driver.xml              |  4 +++-
+ .../qemuxml2xmlout-interface-server.xml              |  8 ++++++--
+ .../qemuxml2xmlout-net-bandwidth.xml                 |  4 +++-
+ .../qemuxml2xmlout-net-bandwidth2.xml                |  4 +++-
+ .../qemuxml2xmlout-net-coalesce.xml                  |  4 +++-
+ tests/qemuxml2xmloutdata/qemuxml2xmlout-net-mtu.xml  |  4 +++-
+ .../qemuxml2xmlout-panic-pseries.xml                 |  4 +++-
+ .../qemuxml2xmlout-pci-serial-dev-chardev.xml        |  4 +++-
+ .../qemuxml2xmlout-pseries-cpu-compat-power9.xml     |  4 +++-
+ .../qemuxml2xmlout-pseries-cpu-compat.xml            |  4 +++-
+ .../qemuxml2xmlout-pseries-cpu-exact.xml             |  4 +++-
+ .../qemuxml2xmlout-pseries-panic-missing.xml         |  4 +++-
+ .../qemuxml2xmlout-pseries-panic-no-address.xml      |  4 +++-
+ .../qemuxml2xmlout-q35-virt-manager-basic.xml        |  4 +++-
+ .../qemuxml2xmlout-serial-spiceport-nospice.xml      |  4 +++-
+ .../qemuxml2xmlout-serial-spiceport.xml              |  4 +++-
+ .../qemuxml2xmlout-serial-target-port-auto.xml       | 12 +++++++++---
+ .../qemuxml2xmlout-serial-tcp-tlsx509-chardev.xml    |  8 ++++++--
+ .../qemuxml2xmlout-tap-vhost-incorrect.xml           |  4 +++-
+ .../qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost.xml  |  4 +++-
+ .../qemuxml2xmlout-vhost_queues.xml                  |  4 +++-
+ 43 files changed, 185 insertions(+), 55 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index bb25255b94..a8a91de2fe 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -4188,6 +4188,26 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+         }
+     }
+ 
++    /* Set the default target model */
++    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
++        chr->targetModel == VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE) {
++        switch ((virDomainChrSerialTargetType) chr->targetType) {
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL;
++            break;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL;
++            break;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
++            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL;
++            break;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
++            /* Nothing to do */
++            break;
++        }
++    }
++
+     /* clear auto generated unix socket path for inactive definitions */
+     if (parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE) {
+         if (qemuDomainChrDefDropDefaultPath(chr, driver) < 0)
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-console-compat.xml b/tests/qemuargv2xmldata/qemuargv2xml-console-compat.xml
+index 7c106f145c..cba43ca451 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-console-compat.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-console-compat.xml
+@@ -28,7 +28,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-dev.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-dev.xml
+index e76d0211dc..e9998d5542 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-dev.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-dev.xml
+@@ -29,7 +29,9 @@
+     </controller>
+     <serial type='dev'>
+       <source path='/dev/ttyS2'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='dev'>
+       <source path='/dev/ttyS2'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-file.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-file.xml
+index ed67ada0d8..0e9dfe5789 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-file.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-file.xml
+@@ -29,7 +29,9 @@
+     </controller>
+     <serial type='file'>
+       <source path='/tmp/serial.log'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='file'>
+       <source path='/tmp/serial.log'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-many.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-many.xml
+index 420771dc9c..05374b38da 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-many.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-many.xml
+@@ -28,11 +28,15 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='file'>
+       <source path='/tmp/serial.log'/>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-pty.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-pty.xml
+index 7c106f145c..cba43ca451 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-pty.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-pty.xml
+@@ -28,7 +28,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp-telnet.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp-telnet.xml
+index 3fe61ffa05..1ac12440e2 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp-telnet.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp-telnet.xml
+@@ -30,7 +30,9 @@
+     <serial type='tcp'>
+       <source mode='bind' host='127.0.0.1' service='9999'/>
+       <protocol type='telnet'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='tcp'>
+       <source mode='bind' host='127.0.0.1' service='9999'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp.xml
+index 3fc9fd39b0..c10cee903b 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-tcp.xml
+@@ -30,7 +30,9 @@
+     <serial type='tcp'>
+       <source mode='connect' host='127.0.0.1' service='9999'/>
+       <protocol type='raw'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='tcp'>
+       <source mode='connect' host='127.0.0.1' service='9999'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-udp.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-udp.xml
+index 5b4af3fe95..fd56dda84c 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-udp.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-udp.xml
+@@ -30,11 +30,15 @@
+     <serial type='udp'>
+       <source mode='bind' host='127.0.0.1' service='9999'/>
+       <source mode='connect' host='127.0.0.1' service='9998'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='udp'>
+       <source mode='connect' service='9999'/>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='udp'>
+       <source mode='bind' host='127.0.0.1' service='9999'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-unix.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-unix.xml
+index 6bb291ff7f..70b192f671 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-unix.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-unix.xml
+@@ -29,7 +29,9 @@
+     </controller>
+     <serial type='unix'>
+       <source mode='connect' path='/tmp/serial.sock'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='unix'>
+       <source mode='connect' path='/tmp/serial.sock'/>
+diff --git a/tests/qemuargv2xmldata/qemuargv2xml-serial-vc.xml b/tests/qemuargv2xmldata/qemuargv2xml-serial-vc.xml
+index 41954fc85d..630844ea0f 100644
+--- a/tests/qemuargv2xmldata/qemuargv2xml-serial-vc.xml
++++ b/tests/qemuargv2xmldata/qemuargv2xml-serial-vc.xml
+@@ -28,7 +28,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+     </controller>
+     <serial type='vc'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='vc'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live+console-virtio.xml b/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live+console-virtio.xml
+index 427f431cce..abe68a0a07 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live+console-virtio.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live+console-virtio.xml
+@@ -68,17 +68,23 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial0'/>
+     </serial>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial1'/>
+     </serial>
+     <serial type='tcp'>
+       <source mode='bind' host='0.0.0.0' service='2445'/>
+       <protocol type='raw'/>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial2'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live.xml b/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live.xml
+index 144f6eff7a..45161e1e2d 100644
+--- a/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live.xml
++++ b/tests/qemuhotplugtestdomains/qemuhotplug-console-compat-2-live.xml
+@@ -68,17 +68,23 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial0'/>
+     </serial>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial1'/>
+     </serial>
+     <serial type='tcp'>
+       <source mode='bind' host='0.0.0.0' service='2445'/>
+       <protocol type='raw'/>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+       <alias name='serial2'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-serial-tcp-tlsx509-chardev-notls.xml b/tests/qemuxml2argvdata/qemuxml2argv-serial-tcp-tlsx509-chardev-notls.xml
+index e6c4adb6f3..89dc9e6e1d 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-serial-tcp-tlsx509-chardev-notls.xml
++++ b/tests/qemuxml2argvdata/qemuxml2argv-serial-tcp-tlsx509-chardev-notls.xml
+@@ -29,12 +29,16 @@
+     <serial type='udp'>
+       <source mode='bind' host='127.0.0.1' service='1111'/>
+       <source mode='connect' host='127.0.0.1' service='2222'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='tcp'>
+       <source mode='connect' host='127.0.0.1' service='5555' tls='no'/>
+       <protocol type='raw'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='udp'>
+       <source mode='bind' host='127.0.0.1' service='1111'/>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
+index f9724d320e..52132a82d7 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
++++ b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases.xml
+@@ -110,10 +110,14 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x0a' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='pty'>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-aarch64-pci-serial.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-aarch64-pci-serial.xml
+index fddab31f07..b02a5a7db6 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-aarch64-pci-serial.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-aarch64-pci-serial.xml
+@@ -34,7 +34,9 @@
+     </controller>
+     <serial type='pty'>
+       <log file='/tmp/log' append='on'/>
+-      <target type='pci-serial' port='0'/>
++      <target type='pci-serial' port='0'>
++        <model name='pci-serial'/>
++      </target>
+       <address type='pci' domain='0x0000' bus='0x02' slot='0x01' function='0x0'/>
+     </serial>
+   </devices>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-bios-nvram-os-interleave.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-bios-nvram-os-interleave.xml
+index 5ee73b527e..b6d7a66361 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-bios-nvram-os-interleave.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-bios-nvram-os-interleave.xml
+@@ -33,7 +33,9 @@
+     </controller>
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-chardev-label.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-chardev-label.xml
+index ad77f62d9e..7d5bbdd0ab 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-chardev-label.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-chardev-label.xml
+@@ -25,13 +25,17 @@
+       <source path='/tmp/serial.file'>
+         <seclabel model='dac' relabel='no'/>
+       </source>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='unix'>
+       <source mode='connect' path='/tmp/serial.sock'>
+         <seclabel model='dac' relabel='no'/>
+       </source>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='file'>
+       <source path='/tmp/serial.file'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat-auto.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat-auto.xml
+index cd9d75c4b7..267b253b15 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat-auto.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat-auto.xml
+@@ -27,7 +27,9 @@
+     </controller>
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat.xml
+index 0c0bd7b348..6a52800a33 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat.xml
+@@ -28,7 +28,9 @@
+     </controller>
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat2.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat2.xml
+index 305c53eab7..8c7bbb768e 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat2.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-compat2.xml
+@@ -31,7 +31,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-virtio-many.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-virtio-many.xml
+index b38b3ce987..1a22b78b8c 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-virtio-many.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-console-virtio-many.xml
+@@ -30,7 +30,9 @@
+     </controller>
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-driver.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-driver.xml
+index 06192fbb4a..5be590e759 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-driver.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-driver.xml
+@@ -47,7 +47,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-server.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-server.xml
+index a6eaa38079..049b1472a8 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-server.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-interface-server.xml
+@@ -104,10 +104,14 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x0a' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='pty'>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth.xml
+index e6ad234240..4ec77d154f 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth.xml
+@@ -55,7 +55,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth2.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth2.xml
+index 66448ec3dd..ee65c3a5b1 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth2.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-bandwidth2.xml
+@@ -44,7 +44,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-coalesce.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-coalesce.xml
+index b1240b8ed1..56792b9999 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-coalesce.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-coalesce.xml
+@@ -57,7 +57,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-mtu.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-mtu.xml
+index 4f7ad323ed..fc7b2e39ae 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-mtu.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-net-mtu.xml
+@@ -54,7 +54,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
+index a563b6dddf..496df0696c 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
+@@ -22,7 +22,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pci-serial-dev-chardev.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pci-serial-dev-chardev.xml
+index 2f704cc0a1..8f77ef043a 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pci-serial-dev-chardev.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pci-serial-dev-chardev.xml
+@@ -28,7 +28,9 @@
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='dev'>
+       <source path='/dev/ttyS2'/>
+-      <target type='pci-serial' port='0'/>
++      <target type='pci-serial' port='0'>
++        <model name='pci-serial'/>
++      </target>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+     </serial>
+     <console type='dev'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
+index 59587b3c32..9d4c5efe67 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
+@@ -25,7 +25,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
+index a39e1fd015..6059859abd 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
+@@ -25,7 +25,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
+index 666eede1a5..f3216523ed 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
+@@ -26,7 +26,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
+index a563b6dddf..496df0696c 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
+@@ -22,7 +22,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
+index a563b6dddf..496df0696c 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
+@@ -22,7 +22,9 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+     <console type='pty'>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-q35-virt-manager-basic.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-q35-virt-manager-basic.xml
+index 27baaa3f14..2437fdec44 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-q35-virt-manager-basic.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-q35-virt-manager-basic.xml
+@@ -79,7 +79,9 @@
+       <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport-nospice.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport-nospice.xml
+index 63462e6f94..e1d5cb9d72 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport-nospice.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport-nospice.xml
+@@ -28,7 +28,9 @@
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='spiceport'>
+       <source channel='org.qemu.console.serial.0'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='spiceport'>
+       <source channel='org.qemu.console.serial.0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport.xml
+index c90bbeb7d5..ff92435afe 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-spiceport.xml
+@@ -28,7 +28,9 @@
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='spiceport'>
+       <source channel='org.qemu.console.serial.0'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='spiceport'>
+       <source channel='org.qemu.console.serial.0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-target-port-auto.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-target-port-auto.xml
+index a8790b5098..fded758eac 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-target-port-auto.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-target-port-auto.xml
+@@ -27,13 +27,19 @@
+     </controller>
+     <controller type='pci' index='0' model='pci-root'/>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='null'>
+-      <target type='isa-serial' port='1'/>
++      <target type='isa-serial' port='1'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='stdio'>
+-      <target type='isa-serial' port='2'/>
++      <target type='isa-serial' port='2'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-tcp-tlsx509-chardev.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-tcp-tlsx509-chardev.xml
+index a8af87b53b..76d8948204 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-tcp-tlsx509-chardev.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-serial-tcp-tlsx509-chardev.xml
+@@ -29,12 +29,16 @@
+     <serial type='udp'>
+       <source mode='bind' host='127.0.0.1' service='1111'/>
+       <source mode='connect' host='127.0.0.1' service='2222'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <serial type='tcp'>
+       <source mode='connect' host='127.0.0.1' service='5555'/>
+       <protocol type='raw'/>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='udp'>
+       <source mode='bind' host='127.0.0.1' service='1111'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost-incorrect.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost-incorrect.xml
+index 6d847de3a2..df4c67bb4d 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost-incorrect.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost-incorrect.xml
+@@ -40,7 +40,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost.xml
+index 30989658f4..70c6a1a0fb 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-tap-vhost.xml
+@@ -47,7 +47,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-vhost_queues.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-vhost_queues.xml
+index 72cbcc4cb5..49a7b550b3 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-vhost_queues.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-vhost_queues.xml
+@@ -46,7 +46,9 @@
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'/>
++      <target type='isa-serial' port='0'>
++        <model name='isa-serial'/>
++      </target>
+     </serial>
+     <console type='pty'>
+       <target type='serial' port='0'/>
+-- 
+2.15.1
+

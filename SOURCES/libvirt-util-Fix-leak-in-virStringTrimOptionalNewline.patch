@@ -1,0 +1,41 @@
+From 38a50c517836b12720b963c498e303d677ec434c Mon Sep 17 00:00:00 2001
+Message-Id: <38a50c517836b12720b963c498e303d677ec434c@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:23 +0100
+Subject: [PATCH] util: Fix leak in virStringTrimOptionalNewline
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Do not access any data if strlen() == 0.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit ea7b2a6d04f5c354b1cda941362ba8ac42e92278)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virstring.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/util/virstring.c b/src/util/virstring.c
+index eac4774b53..b2ebce27ff 100644
+--- a/src/util/virstring.c
++++ b/src/util/virstring.c
+@@ -1394,9 +1394,13 @@ virStringEncodeBase64(const uint8_t *buf, size_t buflen)
+  */
+ void virStringTrimOptionalNewline(char *str)
+ {
+-    char *tmp = str + strlen(str) - 1;
+-    if (*tmp == '\n')
+-        *tmp = '\0';
++    size_t len = strlen(str);
++
++    if (!len)
++        return;
++
++    if (str[len - 1] == '\n')
++        str[len - 1] = '\0';
+ }
+ 
+ 
+-- 
+2.16.1
+

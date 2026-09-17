@@ -1,0 +1,123 @@
+From 73650fdd9de90d6f5a6f4a3c6c19d60368411b07 Mon Sep 17 00:00:00 2001
+Message-Id: <73650fdd9de90d6f5a6f4a3c6c19d60368411b07@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:02 +0100
+Subject: [PATCH] conf: Check virDomainChrSourceDefFormat() return value
+
+The function can fail, but none of the caller were accounting
+for that.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 2cd323e382b4abfffda52fe49d1b50a087716e01)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 34 ++++++++++++++++++++++++----------
+ 1 file changed, 24 insertions(+), 10 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index cf1bd030a0..346edaa6bd 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -24045,7 +24045,9 @@ virDomainChrDefFormat(virBufferPtr buf,
+     if (virDomainChrAttrsDefFormat(buf, def->source, tty_compat) < 0)
+         return -1;
+     virBufferAddLit(buf, ">\n");
+-    virDomainChrSourceDefFormat(buf, def->source, flags);
++
++    if (virDomainChrSourceDefFormat(buf, def->source, flags) < 0)
++        return -1;
+ 
+     if (virDomainChrTargetDefFormat(buf, def, flags) < 0)
+         return -1;
+@@ -24066,13 +24068,14 @@ virDomainSmartcardDefFormat(virBufferPtr buf,
+     const char *mode = virDomainSmartcardTypeToString(def->type);
+     virBuffer childBuf = VIR_BUFFER_INITIALIZER;
+     size_t i;
++    int ret = -1;
+ 
+     virBufferSetChildIndent(&childBuf, buf);
+ 
+     if (!mode) {
+         virReportError(VIR_ERR_INTERNAL_ERROR,
+                        _("unexpected smartcard type %d"), def->type);
+-        return -1;
++        goto cleanup;
+     }
+ 
+     switch (def->type) {
+@@ -24089,23 +24092,25 @@ virDomainSmartcardDefFormat(virBufferPtr buf,
+         break;
+ 
+     case VIR_DOMAIN_SMARTCARD_TYPE_PASSTHROUGH:
+-        virDomainChrSourceDefFormat(&childBuf, def->data.passthru, flags);
++        if (virDomainChrSourceDefFormat(&childBuf, def->data.passthru, flags) < 0)
++            goto cleanup;
+         break;
+ 
+     default:
+         virReportError(VIR_ERR_INTERNAL_ERROR,
+                        _("unexpected smartcard type %d"), def->type);
+-        return -1;
++        goto cleanup;
+     }
+     virDomainDeviceInfoFormat(&childBuf, &def->info, flags);
+ 
+     if (virBufferCheckError(&childBuf) < 0)
+-        return -1;
++        goto cleanup;
+ 
+     virBufferAsprintf(buf, "<smartcard mode='%s'", mode);
+     if (def->type == VIR_DOMAIN_SMARTCARD_TYPE_PASSTHROUGH &&
+-        virDomainChrAttrsDefFormat(buf, def->data.passthru, false) < 0)
+-        return -1;
++        virDomainChrAttrsDefFormat(buf, def->data.passthru, false) < 0) {
++        goto cleanup;
++    }
+ 
+     if (virBufferUse(&childBuf)) {
+         virBufferAddLit(buf, ">\n");
+@@ -24114,7 +24119,12 @@ virDomainSmartcardDefFormat(virBufferPtr buf,
+     } else {
+         virBufferAddLit(buf, "/>\n");
+     }
+-    return 0;
++
++    ret = 0;
++
++ cleanup:
++    virBufferFreeAndReset(&childBuf);
++    return ret;
+ }
+ 
+ static int
+@@ -24416,7 +24426,8 @@ virDomainRNGDefFormat(virBufferPtr buf,
+             return -1;
+         virBufferAddLit(buf, ">\n");
+         virBufferAdjustIndent(buf, 2);
+-        virDomainChrSourceDefFormat(buf, def->source.chardev, flags);
++        if (virDomainChrSourceDefFormat(buf, def->source.chardev, flags) < 0)
++            return -1;
+         virBufferAdjustIndent(buf, -2);
+         virBufferAddLit(buf, "</backend>\n");
+ 
+@@ -25261,7 +25272,10 @@ virDomainRedirdevDefFormat(virBufferPtr buf,
+         return -1;
+     virBufferAddLit(buf, ">\n");
+     virBufferAdjustIndent(buf, 2);
+-    virDomainChrSourceDefFormat(buf, def->source, flags);
++
++    if (virDomainChrSourceDefFormat(buf, def->source, flags) < 0)
++        return -1;
++
+     virDomainDeviceInfoFormat(buf, &def->info,
+                               flags | VIR_DOMAIN_DEF_FORMAT_ALLOW_BOOT);
+     virBufferAdjustIndent(buf, -2);
+-- 
+2.15.1
+

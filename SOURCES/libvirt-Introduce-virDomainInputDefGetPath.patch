@@ -1,0 +1,112 @@
+From 90aa784ed6ab93eae0a5e555c55bd65bc3240647 Mon Sep 17 00:00:00 2001
+Message-Id: <90aa784ed6ab93eae0a5e555c55bd65bc3240647@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Mon, 27 Nov 2017 14:20:58 +0100
+Subject: [PATCH] Introduce virDomainInputDefGetPath
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Use it to denadify qemuDomainSetupInput.
+
+(cherry picked from commit cbf4242db7da3727f86934513c417acdec3d1a48)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509866
+
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c   | 16 ++++++++++++++++
+ src/conf/domain_conf.h   |  1 +
+ src/libvirt_private.syms |  1 +
+ src/qemu/qemu_domain.c   | 21 ++++-----------------
+ 4 files changed, 22 insertions(+), 17 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 641a978f07..530fae9d9d 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -1397,6 +1397,22 @@ void virDomainGraphicsDefFree(virDomainGraphicsDefPtr def)
+     VIR_FREE(def);
+ }
+ 
++const char *virDomainInputDefGetPath(virDomainInputDefPtr input)
++{
++    switch ((virDomainInputType) input->type) {
++    case VIR_DOMAIN_INPUT_TYPE_MOUSE:
++    case VIR_DOMAIN_INPUT_TYPE_TABLET:
++    case VIR_DOMAIN_INPUT_TYPE_KBD:
++    case VIR_DOMAIN_INPUT_TYPE_LAST:
++        return NULL;
++        break;
++
++    case VIR_DOMAIN_INPUT_TYPE_PASSTHROUGH:
++        return input->source.evdev;
++    }
++    return NULL;
++}
++
+ void virDomainInputDefFree(virDomainInputDefPtr def)
+ {
+     if (!def)
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index f967e603d1..09635763a1 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -2696,6 +2696,7 @@ int virDomainObjWaitUntil(virDomainObjPtr vm,
+ void virDomainPanicDefFree(virDomainPanicDefPtr panic);
+ void virDomainResourceDefFree(virDomainResourceDefPtr resource);
+ void virDomainGraphicsDefFree(virDomainGraphicsDefPtr def);
++const char *virDomainInputDefGetPath(virDomainInputDefPtr input);
+ void virDomainInputDefFree(virDomainInputDefPtr def);
+ virDomainDiskDefPtr virDomainDiskDefNew(virDomainXMLOptionPtr xmlopt);
+ void virDomainDiskDefFree(virDomainDiskDefPtr def);
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 8d1d4a896b..3e0bc8730c 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -393,6 +393,7 @@ virDomainHypervTypeToString;
+ virDomainInputBusTypeToString;
+ virDomainInputDefFind;
+ virDomainInputDefFree;
++virDomainInputDefGetPath;
+ virDomainIOMMUModelTypeFromString;
+ virDomainIOMMUModelTypeToString;
+ virDomainIOThreadIDAdd;
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 2f987787cd..dbe9ed5e98 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -8977,25 +8977,12 @@ qemuDomainSetupInput(virQEMUDriverConfigPtr cfg ATTRIBUTE_UNUSED,
+                      virDomainInputDefPtr input,
+                      const struct qemuDomainCreateDeviceData *data)
+ {
+-    int ret = -1;
++    const char *path = virDomainInputDefGetPath(input);
+ 
+-    switch ((virDomainInputType) input->type) {
+-    case VIR_DOMAIN_INPUT_TYPE_PASSTHROUGH:
+-        if (qemuDomainCreateDevice(input->source.evdev, data, false) < 0)
+-            goto cleanup;
+-        break;
++    if (path && qemuDomainCreateDevice(path, data, false) < 0)
++        return -1;
+ 
+-    case VIR_DOMAIN_INPUT_TYPE_MOUSE:
+-    case VIR_DOMAIN_INPUT_TYPE_TABLET:
+-    case VIR_DOMAIN_INPUT_TYPE_KBD:
+-    case VIR_DOMAIN_INPUT_TYPE_LAST:
+-        /* nada */
+-        break;
+-    }
+-
+-    ret = 0;
+- cleanup:
+-    return ret;
++    return 0;
+ }
+ 
+ 
+-- 
+2.15.1
+

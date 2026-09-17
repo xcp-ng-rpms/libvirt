@@ -1,0 +1,73 @@
+From 9daae960fbe9902f9db5ebc76ded1f197bb3e6ae Mon Sep 17 00:00:00 2001
+Message-Id: <9daae960fbe9902f9db5ebc76ded1f197bb3e6ae@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Wed, 7 Feb 2018 14:16:00 +0100
+Subject: [PATCH] qemu: Remove unused 'cpuhalted' argument from
+ qemuDomainHelperGetVcpus
+
+The halted state is no longer extracted using this helper so the
+argument can be removed.
+
+(cherry picked from commit 2222548b1e55257dc8806abdbefa71a87b22dea1)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1534585
+---
+ src/qemu/qemu_driver.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index bfb3c3c4c5..b5bef7442e 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -1490,8 +1490,7 @@ qemuDomainHelperGetVcpus(virDomainObjPtr vm,
+                          unsigned long long *cpuwait,
+                          int maxinfo,
+                          unsigned char *cpumaps,
+-                         int maplen,
+-                         bool *cpuhalted)
++                         int maplen)
+ {
+     size_t ncpuinfo = 0;
+     size_t i;
+@@ -1511,9 +1510,6 @@ qemuDomainHelperGetVcpus(virDomainObjPtr vm,
+     if (cpumaps)
+         memset(cpumaps, 0, sizeof(*cpumaps) * maxinfo);
+ 
+-    if (cpuhalted)
+-        memset(cpuhalted, 0, sizeof(*cpuhalted) * maxinfo);
+-
+     for (i = 0; i < virDomainDefGetVcpusMax(vm->def) && ncpuinfo < maxinfo; i++) {
+         virDomainVcpuDefPtr vcpu = virDomainDefGetVcpu(vm->def, i);
+         pid_t vcpupid = qemuDomainGetVcpuPid(vm, i);
+@@ -1551,9 +1547,6 @@ qemuDomainHelperGetVcpus(virDomainObjPtr vm,
+                 return -1;
+         }
+ 
+-        if (cpuhalted)
+-            cpuhalted[ncpuinfo] = qemuDomainGetVcpuHalted(vm, ncpuinfo);
+-
+         ncpuinfo++;
+     }
+ 
+@@ -5411,8 +5404,7 @@ qemuDomainGetVcpus(virDomainPtr dom,
+         goto cleanup;
+     }
+ 
+-    ret = qemuDomainHelperGetVcpus(vm, info, NULL, maxinfo, cpumaps, maplen,
+-                                   NULL);
++    ret = qemuDomainHelperGetVcpus(vm, info, NULL, maxinfo, cpumaps, maplen);
+ 
+  cleanup:
+     virDomainObjEndAPI(&vm);
+@@ -19567,7 +19559,7 @@ qemuDomainGetStatsVcpu(virQEMUDriverPtr driver,
+ 
+     if (qemuDomainHelperGetVcpus(dom, cpuinfo, cpuwait,
+                                  virDomainDefGetVcpus(dom->def),
+-                                 NULL, 0, NULL) < 0) {
++                                 NULL, 0) < 0) {
+         virResetLastError();
+         ret = 0; /* it's ok to be silent and go ahead */
+         goto cleanup;
+-- 
+2.16.1
+

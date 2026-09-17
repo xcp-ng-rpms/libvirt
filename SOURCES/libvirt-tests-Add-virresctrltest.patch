@@ -1,0 +1,207 @@
+From 15e49265411702cd518af91e04a78ef911559d06 Mon Sep 17 00:00:00 2001
+Message-Id: <15e49265411702cd518af91e04a78ef911559d06@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:31 +0100
+Subject: [PATCH] tests: Add virresctrltest
+
+This test initializes capabilities from vircaps2xmldata (since it exists there
+already) and then requests list of free bitmaps (all unallocated space) from
+virresctrl.c
+
+Desirable outputs are saved in virresctrldata.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit ae885bb52089b1d367e7ac1ed5d8d683e0bfefbd)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ tests/Makefile.am                                  |   9 +-
+ tests/virresctrldata/resctrl-cdp.schemata          |   2 +
+ .../virresctrldata/resctrl-skx-twocaches.schemata  |   1 +
+ tests/virresctrldata/resctrl-skx.schemata          |   1 +
+ tests/virresctrldata/resctrl.schemata              |   1 +
+ tests/virresctrltest.c                             | 102 +++++++++++++++++++++
+ 6 files changed, 115 insertions(+), 1 deletion(-)
+ create mode 100644 tests/virresctrldata/resctrl-cdp.schemata
+ create mode 100644 tests/virresctrldata/resctrl-skx-twocaches.schemata
+ create mode 100644 tests/virresctrldata/resctrl-skx.schemata
+ create mode 100644 tests/virresctrldata/resctrl.schemata
+ create mode 100644 tests/virresctrltest.c
+
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 0b2305d70b..f845b44102 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -164,6 +164,7 @@ EXTRA_DIST =		\
+ 	xml2vmxdata \
+ 	virstorageutildata \
+ 	virfilecachedata \
++	virresctrldata \
+ 	$(NULL)
+ 
+ test_helpers = commandhelper ssh
+@@ -231,6 +232,7 @@ if WITH_LINUX
+ test_programs += fchosttest
+ test_programs += scsihosttest
+ test_programs += vircaps2xmltest
++test_programs += virresctrltest
+ test_libraries += virusbmock.la \
+ 	virnetdevbandwidthmock.la \
+ 	virnumamock.la \
+@@ -1172,8 +1174,13 @@ virnumamock_la_CFLAGS = $(AM_CFLAGS)
+ virnumamock_la_LDFLAGS = $(MOCKLIBS_LDFLAGS)
+ virnumamock_la_LIBADD = $(MOCKLIBS_LIBS)
+ 
++virresctrltest_SOURCES = \
++	virresctrltest.c testutils.h testutils.c virfilewrapper.h virfilewrapper.c
++virresctrltest_LDADD = $(LDADDS)
++
+ else ! WITH_LINUX
+-EXTRA_DIST += vircaps2xmltest.c virnumamock.c virfilewrapper.c virfilewrapper.h
++EXTRA_DIST += vircaps2xmltest.c virnumamock.c virfilewrapper.c \
++			  virfilewrapper.h virresctrltest.c
+ endif ! WITH_LINUX
+ 
+ if WITH_NSS
+diff --git a/tests/virresctrldata/resctrl-cdp.schemata b/tests/virresctrldata/resctrl-cdp.schemata
+new file mode 100644
+index 0000000000..2897e2afa6
+--- /dev/null
++++ b/tests/virresctrldata/resctrl-cdp.schemata
+@@ -0,0 +1,2 @@
++L3CODE:0=00ffc;1=0ff00
++L3DATA:0=00000;1=03fff
+diff --git a/tests/virresctrldata/resctrl-skx-twocaches.schemata b/tests/virresctrldata/resctrl-skx-twocaches.schemata
+new file mode 100644
+index 0000000000..86b3801a04
+--- /dev/null
++++ b/tests/virresctrldata/resctrl-skx-twocaches.schemata
+@@ -0,0 +1 @@
++L3:0=001;1=400
+diff --git a/tests/virresctrldata/resctrl-skx.schemata b/tests/virresctrldata/resctrl-skx.schemata
+new file mode 100644
+index 0000000000..5e8b0d6362
+--- /dev/null
++++ b/tests/virresctrldata/resctrl-skx.schemata
+@@ -0,0 +1 @@
++L3:0=70f
+diff --git a/tests/virresctrldata/resctrl.schemata b/tests/virresctrldata/resctrl.schemata
+new file mode 100644
+index 0000000000..fa980e58c9
+--- /dev/null
++++ b/tests/virresctrldata/resctrl.schemata
+@@ -0,0 +1 @@
++L3:0=000ff;1=000f0
+diff --git a/tests/virresctrltest.c b/tests/virresctrltest.c
+new file mode 100644
+index 0000000000..99e20d5dec
+--- /dev/null
++++ b/tests/virresctrltest.c
+@@ -0,0 +1,102 @@
++#include <config.h>
++#include <stdlib.h>
++
++#include "testutils.h"
++#include "virfilewrapper.h"
++#include "virresctrlpriv.h"
++
++
++#define VIR_FROM_THIS VIR_FROM_NONE
++
++struct virResctrlData {
++    const char *filename;
++    bool fail;
++};
++
++
++static int
++test_virResctrlGetUnused(const void *opaque)
++{
++    struct virResctrlData *data = (struct virResctrlData *) opaque;
++    char *system_dir = NULL;
++    char *resctrl_dir = NULL;
++    int ret = -1;
++    virResctrlAllocPtr alloc = NULL;
++    char *schemata_str = NULL;
++    char *schemata_file;
++    virCapsPtr caps = NULL;
++
++    if (virAsprintf(&system_dir, "%s/vircaps2xmldata/linux-%s/system",
++                    abs_srcdir, data->filename) < 0)
++        goto cleanup;
++
++    if (virAsprintf(&resctrl_dir, "%s/vircaps2xmldata/linux-%s/resctrl",
++                    abs_srcdir, data->filename) < 0)
++        goto cleanup;
++
++    if (virAsprintf(&schemata_file, "%s/virresctrldata/%s.schemata",
++                    abs_srcdir, data->filename) < 0)
++        goto cleanup;
++
++    virFileWrapperAddPrefix("/sys/devices/system", system_dir);
++    virFileWrapperAddPrefix("/sys/fs/resctrl", resctrl_dir);
++
++    caps = virCapabilitiesNew(VIR_ARCH_X86_64, false, false);
++    if (!caps || virCapabilitiesInitCaches(caps) < 0) {
++        fprintf(stderr, "Could not initialize capabilities");
++        goto cleanup;
++    }
++
++    alloc = virResctrlAllocGetUnused(caps->host.resctrl);
++
++    virFileWrapperClearPrefixes();
++
++    if (!alloc) {
++        if (data->fail)
++            ret = 0;
++        goto cleanup;
++    } else if (data->fail) {
++        VIR_TEST_DEBUG("Error expected but there wasn't any.\n");
++        ret = -1;
++        goto cleanup;
++    }
++
++    schemata_str = virResctrlAllocFormat(alloc);
++
++    if (virTestCompareToFile(schemata_str, schemata_file) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virObjectUnref(caps);
++    virObjectUnref(alloc);
++    VIR_FREE(system_dir);
++    VIR_FREE(resctrl_dir);
++    VIR_FREE(schemata_str);
++    VIR_FREE(schemata_file);
++    return ret;
++}
++
++
++static int
++mymain(void)
++{
++    struct virResctrlData data = {0};
++    int ret = 0;
++
++#define DO_TEST_UNUSED(_filename) \
++    do { \
++        data = (struct virResctrlData) { .filename = _filename }; \
++        if (virTestRun("Free: " _filename, test_virResctrlGetUnused, &data) < 0) \
++            ret = -1; \
++    } while (0)
++
++    DO_TEST_UNUSED("resctrl");
++    DO_TEST_UNUSED("resctrl-cdp");
++    DO_TEST_UNUSED("resctrl-skx");
++    DO_TEST_UNUSED("resctrl-skx-twocaches");
++
++    return ret;
++}
++
++VIR_TEST_MAIN(mymain)
+-- 
+2.16.1
+

@@ -1,0 +1,40 @@
+From 9911807f7cf94ab328916fd9f00f20cc09a6455a Mon Sep 17 00:00:00 2001
+Message-Id: <9911807f7cf94ab328916fd9f00f20cc09a6455a@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 23 Nov 2017 19:02:21 +0100
+Subject: [PATCH] qemu: Disallow pivot of shared disks to unsupported storage
+
+Pivoting to a unsupported storage type might break the assumption that
+shared disks will not corrupt metadata.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1511480
+(cherry picked from commit 2b41c86294786c07f53afa633fe3dce703debc3c)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_driver.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index 620028fe07..d0d29747cf 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -16509,6 +16509,16 @@ qemuDomainBlockPivot(virQEMUDriverPtr driver,
+         goto cleanup;
+     }
+ 
++    /* When pivoting to a shareable disk we need to make sure that the disk can
++     * be safely shared, since block copy might have changed the format. */
++    if (disk->src->shared && !disk->src->readonly &&
++        !qemuBlockStorageSourceSupportsConcurrentAccess(disk->mirror)) {
++        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
++                       _("can't pivot a shared disk to a storage volume not "
++                         "supporting sharing"));
++        goto cleanup;
++    }
++
+     /* For active commit, the mirror is part of the already labeled
+      * chain.  For blockcopy, we previously labeled only the top-level
+      * image; but if the user is reusing an external image that
+-- 
+2.15.0
+

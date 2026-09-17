@@ -1,0 +1,114 @@
+From 0d4d7811a11bcd2bf12446425e5e05014faecf52 Mon Sep 17 00:00:00 2001
+Message-Id: <0d4d7811a11bcd2bf12446425e5e05014faecf52@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Mon, 20 Nov 2017 11:08:53 +0100
+Subject: [PATCH] qemuBuildDriveDevStr: Prefer default alias for SATA bus
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1434451
+
+Just like in 9324f67a572f9b32 we need to put default sata alias
+(which is hardcoded to "ide", obvious, right?) onto the command
+line instead of the one provided by user.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit f66e5896ad6013c2f31eef1c909999b33ba8847e)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c                            | 15 ++++++++--
+ .../qemuxml2argv-user-aliases2.args                |  1 +
+ .../qemuxml2argv-user-aliases2.xml                 | 34 ++++++++++++++++++++++
+ tests/qemuxml2argvtest.c                           |  1 +
+ 4 files changed, 48 insertions(+), 3 deletions(-)
+ create mode 120000 tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.xml
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 272ef610a3..7dc7387a15 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -2076,9 +2076,18 @@ qemuBuildDriveDevStr(const virDomainDef *def,
+             virBufferAddLit(&opt, "ide-drive");
+         }
+ 
+-        if (!(contAlias = virDomainControllerAliasFind(def, VIR_DOMAIN_CONTROLLER_TYPE_SATA,
+-                                                      disk->info.addr.drive.controller)))
+-           goto error;
++        /* When domain has builtin SATA controller we don't put it onto cmd
++         * line. Therefore we can't set its alias. In that case, use the
++         * default one. */
++        if (qemuDomainIsQ35(def) &&
++            disk->info.addr.drive.controller == 0) {
++            contAlias = "ide";
++        } else {
++            if (!(contAlias = virDomainControllerAliasFind(def,
++                                                           VIR_DOMAIN_CONTROLLER_TYPE_SATA,
++                                                           disk->info.addr.drive.controller)))
++                goto error;
++        }
+         virBufferAsprintf(&opt, ",bus=%s.%d",
+                           contAlias,
+                           disk->info.addr.drive.unit);
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.args b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.args
+new file mode 120000
+index 0000000000..e029bc0ec8
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.args
+@@ -0,0 +1 @@
++qemuxml2argv-boot-floppy-q35.args
+\ No newline at end of file
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.xml b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.xml
+new file mode 100644
+index 0000000000..a288b86117
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-user-aliases2.xml
+@@ -0,0 +1,34 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='x86_64' machine='pc-q35-2.4'>hvm</type>
++    <boot dev='fd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-x86_64</emulator>
++    <disk type='file' device='floppy'>
++      <driver name='qemu' type='raw'/>
++      <source file='/tmp/firmware.img'/>
++      <target dev='fda' bus='fdc'/>
++      <address type='drive' controller='0' bus='0' target='0' unit='0'/>
++    </disk>
++    <controller type='sata' index='0'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x1f' function='0x2'/>
++    </controller>
++    <controller type='pci' index='0' model='pcie-root'>
++      <alias name='ua-MySataController'/>
++    </controller>
++    <controller type='fdc' index='0'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index ecc86d045c..ff9c8608aa 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -2827,6 +2827,7 @@ mymain(void)
+             QEMU_CAPS_OBJECT_MEMORY_FILE, QEMU_CAPS_PIIX_DISABLE_S3,
+             QEMU_CAPS_PIIX_DISABLE_S4, QEMU_CAPS_VNC,
+             QEMU_CAPS_HDA_DUPLEX);
++    DO_TEST("user-aliases2", QEMU_CAPS_DEVICE_IOH3420, QEMU_CAPS_ICH9_AHCI);
+ 
+     if (getenv("LIBVIRT_SKIP_CLEANUP") == NULL)
+         virFileDeleteTree(fakerootdir);
+-- 
+2.15.0
+

@@ -1,0 +1,166 @@
+From 5a978253cced5135a6dd01c730faea2fd21a5dc9 Mon Sep 17 00:00:00 2001
+Message-Id: <5a978253cced5135a6dd01c730faea2fd21a5dc9@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:18 +0100
+Subject: [PATCH] conf: Format cache banks in capabilities with
+ virFormatIntPretty
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 63d95a19cc72d120d40092c1e97235d7b9d4eb29)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/conf/capabilities.c                            | 50 ++++++++++++++--------
+ tests/vircaps2xmldata/vircaps-x86_64-caches.xml    |  2 +-
+ .../vircaps2xmldata/vircaps-x86_64-resctrl-cdp.xml |  4 +-
+ .../vircaps2xmldata/vircaps-x86_64-resctrl-skx.xml |  4 +-
+ tests/vircaps2xmldata/vircaps-x86_64-resctrl.xml   |  4 +-
+ 5 files changed, 39 insertions(+), 25 deletions(-)
+
+diff --git a/src/conf/capabilities.c b/src/conf/capabilities.c
+index 1f7d8cdb31..798c9bdaea 100644
+--- a/src/conf/capabilities.c
++++ b/src/conf/capabilities.c
+@@ -883,7 +883,8 @@ virCapabilitiesFormatCaches(virBufferPtr buf,
+     for (i = 0; i < ncaches; i++) {
+         virCapsHostCacheBankPtr bank = caches[i];
+         char *cpus_str = virBitmapFormat(bank->cpus);
+-        bool kilos = !(bank->size % 1024);
++        const char *unit = NULL;
++        unsigned long long short_size = virFormatIntPretty(bank->size, &unit);
+ 
+         if (!cpus_str)
+             return -1;
+@@ -897,34 +898,47 @@ virCapabilitiesFormatCaches(virBufferPtr buf,
+                           "size='%llu' unit='%s' cpus='%s'",
+                           bank->id, bank->level,
+                           virCacheTypeToString(bank->type),
+-                          bank->size >> (kilos * 10),
+-                          kilos ? "KiB" : "B",
+-                          cpus_str);
++                          short_size, unit, cpus_str);
+         VIR_FREE(cpus_str);
+ 
+         virBufferSetChildIndent(&controlBuf, buf);
+         for (j = 0; j < bank->ncontrols; j++) {
+-            bool min_kilos = !(bank->controls[j]->granularity % 1024);
++            const char *min_unit;
++            virResctrlInfoPtr controls = bank->controls[j];
++            unsigned long long gran_short_size = controls->granularity;
++            unsigned long long min_short_size = controls->min;
+ 
+-            /* Only use KiB if both values are divisible */
+-            if (bank->controls[j]->min)
+-                min_kilos = min_kilos && !(bank->controls[j]->min % 1024);
++            gran_short_size = virFormatIntPretty(gran_short_size, &unit);
++            min_short_size = virFormatIntPretty(min_short_size, &min_unit);
+ 
+-            virBufferAsprintf(&controlBuf,
+-                              "<control granularity='%llu'",
+-                              bank->controls[j]->granularity >> (min_kilos * 10));
++            /* Only use the smaller unit if they are different */
++            if (min_short_size) {
++                unsigned long long gran_div;
++                unsigned long long min_div;
+ 
+-            if (bank->controls[j]->min) {
+-                virBufferAsprintf(&controlBuf,
+-                                  " min='%llu'",
+-                                  bank->controls[j]->min >> (min_kilos * 10));
++                gran_div = controls->granularity / gran_short_size;
++                min_div = controls->min / min_short_size;
++
++                if (min_div > gran_div) {
++                    min_short_size *= min_div / gran_div;
++                } else if (min_div < gran_div) {
++                    unit = min_unit;
++                    gran_short_size *= gran_div / min_div;
++                }
+             }
+ 
++            virBufferAsprintf(&controlBuf,
++                              "<control granularity='%llu'",
++                              gran_short_size);
++
++            if (min_short_size)
++                virBufferAsprintf(&controlBuf, " min='%llu'", min_short_size);
++
+             virBufferAsprintf(&controlBuf,
+                               " unit='%s' type='%s' maxAllocs='%u'/>\n",
+-                              min_kilos ? "KiB" : "B",
+-                              virCacheTypeToString(bank->controls[j]->scope),
+-                              bank->controls[j]->max_allocation);
++                              unit,
++                              virCacheTypeToString(controls->scope),
++                              controls->max_allocation);
+         }
+ 
+         if (virBufferCheckError(&controlBuf) < 0)
+diff --git a/tests/vircaps2xmldata/vircaps-x86_64-caches.xml b/tests/vircaps2xmldata/vircaps-x86_64-caches.xml
+index fe0be6d08f..0c6f3769a2 100644
+--- a/tests/vircaps2xmldata/vircaps-x86_64-caches.xml
++++ b/tests/vircaps2xmldata/vircaps-x86_64-caches.xml
+@@ -29,7 +29,7 @@
+       </cells>
+     </topology>
+     <cache>
+-      <bank id='0' level='3' type='both' size='8192' unit='KiB' cpus='0-7'/>
++      <bank id='0' level='3' type='both' size='8' unit='MiB' cpus='0-7'/>
+     </cache>
+   </host>
+ 
+diff --git a/tests/vircaps2xmldata/vircaps-x86_64-resctrl-cdp.xml b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-cdp.xml
+index 7361537bfb..443917c62d 100644
+--- a/tests/vircaps2xmldata/vircaps-x86_64-resctrl-cdp.xml
++++ b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-cdp.xml
+@@ -41,11 +41,11 @@
+       </cells>
+     </topology>
+     <cache>
+-      <bank id='0' level='3' type='both' size='15360' unit='KiB' cpus='0-5'>
++      <bank id='0' level='3' type='both' size='15' unit='MiB' cpus='0-5'>
+         <control granularity='768' unit='KiB' type='code' maxAllocs='8'/>
+         <control granularity='768' unit='KiB' type='data' maxAllocs='8'/>
+       </bank>
+-      <bank id='1' level='3' type='both' size='15360' unit='KiB' cpus='6-11'>
++      <bank id='1' level='3' type='both' size='15' unit='MiB' cpus='6-11'>
+         <control granularity='768' unit='KiB' type='code' maxAllocs='8'/>
+         <control granularity='768' unit='KiB' type='data' maxAllocs='8'/>
+       </bank>
+diff --git a/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx.xml b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx.xml
+index 4e91c87de3..0cd25e59a9 100644
+--- a/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx.xml
++++ b/tests/vircaps2xmldata/vircaps-x86_64-resctrl-skx.xml
+@@ -22,8 +22,8 @@
+       </cells>
+     </topology>
+     <cache>
+-      <bank id='0' level='3' type='both' size='33792' unit='KiB' cpus='0'>
+-        <control granularity='3072' unit='KiB' type='both' maxAllocs='16'/>
++      <bank id='0' level='3' type='both' size='33' unit='MiB' cpus='0'>
++        <control granularity='3' unit='MiB' type='both' maxAllocs='16'/>
+       </bank>
+     </cache>
+   </host>
+diff --git a/tests/vircaps2xmldata/vircaps-x86_64-resctrl.xml b/tests/vircaps2xmldata/vircaps-x86_64-resctrl.xml
+index eb02ad3322..7629259294 100644
+--- a/tests/vircaps2xmldata/vircaps-x86_64-resctrl.xml
++++ b/tests/vircaps2xmldata/vircaps-x86_64-resctrl.xml
+@@ -41,10 +41,10 @@
+       </cells>
+     </topology>
+     <cache>
+-      <bank id='0' level='3' type='both' size='15360' unit='KiB' cpus='0-5'>
++      <bank id='0' level='3' type='both' size='15' unit='MiB' cpus='0-5'>
+         <control granularity='768' min='1536' unit='KiB' type='both' maxAllocs='4'/>
+       </bank>
+-      <bank id='1' level='3' type='both' size='15360' unit='KiB' cpus='6-11'>
++      <bank id='1' level='3' type='both' size='15' unit='MiB' cpus='6-11'>
+         <control granularity='768' min='1536' unit='KiB' type='both' maxAllocs='4'/>
+       </bank>
+     </cache>
+-- 
+2.16.1
+

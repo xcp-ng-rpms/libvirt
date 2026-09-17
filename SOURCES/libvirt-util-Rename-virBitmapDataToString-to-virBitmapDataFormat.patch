@@ -1,0 +1,144 @@
+From 41bc8c60fd726c0e7724f969796521bfc7a037f8 Mon Sep 17 00:00:00 2001
+Message-Id: <41bc8c60fd726c0e7724f969796521bfc7a037f8@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:12 +0100
+Subject: [PATCH] util: Rename virBitmapDataToString to virBitmapDataFormat
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+It is literally only a wrapper around virBitmapNewData() and
+virBitmapFormat(), only the naming was wrong since it was introduced.
+And because we have virBitmap*String functions where the meaning of
+the 'String' is constant, this might confuse someone.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 5d893ed6ad7f42fb9ae94c6150c9d8aedc5c512b)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/libvirt_private.syms | 2 +-
+ src/util/virbitmap.c     | 6 +++---
+ src/util/virbitmap.h     | 4 ++--
+ tests/virbitmaptest.c    | 6 +++---
+ tools/virsh-domain.c     | 4 ++--
+ tools/virsh-host.c       | 2 +-
+ 6 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index d0f2c027fc..f1c6786ecf 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1357,7 +1357,7 @@ virBitmapClearBit;
+ virBitmapClearBitExpand;
+ virBitmapCopy;
+ virBitmapCountBits;
+-virBitmapDataToString;
++virBitmapDataFormat;
+ virBitmapEqual;
+ virBitmapFormat;
+ virBitmapFree;
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index e7d04e8c8b..f5700a6424 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -1046,7 +1046,7 @@ virBitmapCountBits(virBitmapPtr bitmap)
+ }
+ 
+ /**
+- * virBitmapDataToString:
++ * virBitmapDataFormat:
+  * @data: the data
+  * @len: length of @data in bytes
+  *
+@@ -1056,8 +1056,8 @@ virBitmapCountBits(virBitmapPtr bitmap)
+  * Returns: a string representation of the data, or NULL on error
+  */
+ char *
+-virBitmapDataToString(const void *data,
+-                      int len)
++virBitmapDataFormat(const void *data,
++                    int len)
+ {
+     virBitmapPtr map = NULL;
+     char *ret = NULL;
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index 99eb779d71..720b389cfe 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -136,8 +136,8 @@ ssize_t virBitmapNextClearBit(virBitmapPtr bitmap, ssize_t pos)
+ size_t virBitmapCountBits(virBitmapPtr bitmap)
+     ATTRIBUTE_NONNULL(1);
+ 
+-char *virBitmapDataToString(const void *data,
+-                            int len)
++char *virBitmapDataFormat(const void *data,
++                          int len)
+     ATTRIBUTE_NONNULL(1);
+ bool virBitmapOverlaps(virBitmapPtr b1,
+                        virBitmapPtr b2)
+diff --git a/tests/virbitmaptest.c b/tests/virbitmaptest.c
+index 76005117e7..75cdddf9a7 100644
+--- a/tests/virbitmaptest.c
++++ b/tests/virbitmaptest.c
+@@ -294,7 +294,7 @@ test4(const void *data ATTRIBUTE_UNUSED)
+     return -1;
+ }
+ 
+-/* test for virBitmapNewData/ToData/DataToString */
++/* test for virBitmapNewData/ToData/DataFormat */
+ static int
+ test5(const void *v ATTRIBUTE_UNUSED)
+ {
+@@ -336,12 +336,12 @@ test5(const void *v ATTRIBUTE_UNUSED)
+         data2[4] != 0x04)
+         goto error;
+ 
+-    if (!(str = virBitmapDataToString(data, sizeof(data))))
++    if (!(str = virBitmapDataFormat(data, sizeof(data))))
+         goto error;
+     if (STRNEQ(str, "0,9,34"))
+         goto error;
+     VIR_FREE(str);
+-    if (!(str = virBitmapDataToString(data2, len2)))
++    if (!(str = virBitmapDataFormat(data2, len2)))
+         goto error;
+     if (STRNEQ(str, "0,2,9,15,34"))
+         goto error;
+diff --git a/tools/virsh-domain.c b/tools/virsh-domain.c
+index 1e33e82959..7547cf134f 100644
+--- a/tools/virsh-domain.c
++++ b/tools/virsh-domain.c
+@@ -6527,7 +6527,7 @@ virshVcpuinfoPrintAffinity(vshControl *ctl,
+ 
+     vshPrint(ctl, "%-15s ", _("CPU Affinity:"));
+     if (pretty) {
+-        if (!(str = virBitmapDataToString(cpumap, VIR_CPU_MAPLEN(maxcpu))))
++        if (!(str = virBitmapDataFormat(cpumap, VIR_CPU_MAPLEN(maxcpu))))
+             goto cleanup;
+         vshPrint(ctl, _("%s (out of %d)"), str, maxcpu);
+     } else {
+@@ -6781,7 +6781,7 @@ virshPrintPinInfo(vshControl *ctl,
+ {
+     char *str = NULL;
+ 
+-    if (!(str = virBitmapDataToString(cpumap, cpumaplen)))
++    if (!(str = virBitmapDataFormat(cpumap, cpumaplen)))
+         return false;
+ 
+     vshPrint(ctl, "%s", str);
+diff --git a/tools/virsh-host.c b/tools/virsh-host.c
+index 5509065fd6..ecaf830e35 100644
+--- a/tools/virsh-host.c
++++ b/tools/virsh-host.c
+@@ -717,7 +717,7 @@ cmdNodeCpuMap(vshControl *ctl, const vshCmd *cmd ATTRIBUTE_UNUSED)
+ 
+     vshPrint(ctl, "%-15s ", _("CPU map:"));
+     if (pretty) {
+-        char *str = virBitmapDataToString(cpumap, VIR_CPU_MAPLEN(cpunum));
++        char *str = virBitmapDataFormat(cpumap, VIR_CPU_MAPLEN(cpunum));
+ 
+         if (!str)
+             goto cleanup;
+-- 
+2.16.1
+

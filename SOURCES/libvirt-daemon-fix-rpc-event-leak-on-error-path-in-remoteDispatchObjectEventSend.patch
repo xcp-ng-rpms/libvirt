@@ -1,0 +1,78 @@
+From 22b8106dabd9bbcaa78e6bcdd08b1c376f1a824d Mon Sep 17 00:00:00 2001
+Message-Id: <22b8106dabd9bbcaa78e6bcdd08b1c376f1a824d@dist-git>
+From: Nikolay Shirokovskiy <nshirokovskiy@virtuozzo.com>
+Date: Tue, 24 Jul 2018 15:52:39 -0400
+Subject: [PATCH] daemon: fix rpc event leak on error path in
+ remoteDispatchObjectEventSend
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RHEL 7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1598032
+RHEL 7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1607752
+
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Nikolay Shirokovskiy <nshirokovskiy@virtuozzo.com>
+(cherry picked from commit 8fafbf630fb366f54ed7478af46574be21a0e37c)
+
+NB: Some valgrind data from bz:
+
+  ==00:00:32:56.936 16421== 1,638,500 bytes in 25 blocks are possibly lost in loss record 2,349 of 2,351
+  ==00:00:32:56.936 16421==    at 0x4C29B0D: malloc (vg_replace_malloc.c:298)
+  ==00:00:32:56.936 16421==    by 0x4C2BAD9: realloc (vg_replace_malloc.c:785)
+  ==00:00:32:56.936 16421==    by 0x54BB5AF: virReallocN (viralloc.c:245)
+  ==00:00:32:56.936 16421==    by 0x165AD3: virNetMessageEncodeHeader (virnetmessage.c:234)
+  ==00:00:32:56.936 16421==    by 0x125472: remoteDispatchObjectEventSend (remote.c:3996)
+  ==00:00:32:56.936 16421==    by 0x129A7F: remoteRelayDomainEventLifecycle (remote.c:329)
+  ==00:00:32:56.936 16421==    by 0x5599091: virDomainEventDispatchDefaultFunc (domain_event.c:1779)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateDispatchCallbacks (object_event.c:715)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateQueueDispatch (object_event.c:729)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateFlush (object_event.c:830)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventTimer (object_event.c:560)
+  ==00:00:32:56.936 16421==    by 0x54DCC68: virEventPollDispatchTimeouts (vireventpoll.c:457)
+  ==00:00:32:56.936 16421==    by 0x54DCC68: virEventPollRunOnce (vireventpoll.c:653)
+  ==00:00:32:56.936 16421==    by 0x54DB5C1: virEventRunDefaultImpl (virevent.c:327)
+  ==00:00:32:56.936 16421==    by 0x565991C: virNetDaemonRun (virnetdaemon.c:837)
+  ==00:00:32:56.936 16421==    by 0x1240AD: main (libvirtd.c:1494)
+  ==00:00:32:56.936 16421==
+  ==00:00:32:56.936 16421== 55,668,712 (90,792 direct, 55,577,920 indirect) bytes in 873 blocks are definitely lost in loss record 2,351 of 2,351
+  ==00:00:32:56.936 16421==    at 0x4C2B955: calloc (vg_replace_malloc.c:711)
+  ==00:00:32:56.936 16421==    by 0x54BB4B3: virAlloc (viralloc.c:144)
+  ==00:00:32:56.936 16421==    by 0x165425: virNetMessageNew (virnetmessage.c:42)
+  ==00:00:32:56.936 16421==    by 0x125433: remoteDispatchObjectEventSend (remote.c:3986)
+  ==00:00:32:56.936 16421==    by 0x129A7F: remoteRelayDomainEventLifecycle (remote.c:329)
+  ==00:00:32:56.936 16421==    by 0x5599091: virDomainEventDispatchDefaultFunc (domain_event.c:1779)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateDispatchCallbacks (object_event.c:715)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateQueueDispatch (object_event.c:729)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventStateFlush (object_event.c:830)
+  ==00:00:32:56.936 16421==    by 0x55975A6: virObjectEventTimer (object_event.c:560)
+  ==00:00:32:56.936 16421==    by 0x54DCC68: virEventPollDispatchTimeouts (vireventpoll.c:457)
+  ==00:00:32:56.936 16421==    by 0x54DCC68: virEventPollRunOnce (vireventpoll.c:653)
+  ==00:00:32:56.936 16421==    by 0x54DB5C1: virEventRunDefaultImpl (virevent.c:327)
+  ==00:00:32:56.936 16421==    by 0x565991C: virNetDaemonRun (virnetdaemon.c:837)
+  ==00:00:32:56.936 16421==    by 0x1240AD: main (libvirtd.c:1494)
+  ==00:00:32:56.936 16421==
+
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+Reviewed-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ daemon/remote.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/daemon/remote.c b/daemon/remote.c
+index 3f7d2d3440..806479e72d 100644
+--- a/daemon/remote.c
++++ b/daemon/remote.c
+@@ -4000,7 +4000,8 @@ remoteDispatchObjectEventSend(virNetServerClientPtr client,
+         goto cleanup;
+ 
+     VIR_DEBUG("Queue event %d %zu", procnr, msg->bufferLength);
+-    virNetServerClientSendMessage(client, msg);
++    if (virNetServerClientSendMessage(client, msg) < 0)
++        goto cleanup;
+ 
+     xdr_free(proc, data);
+     return;
+-- 
+2.18.0
+

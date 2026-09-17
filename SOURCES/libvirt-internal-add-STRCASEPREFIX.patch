@@ -1,0 +1,36 @@
+From d31ebaf3eb3c4ead397c054cbe1a7dbfe331aad5 Mon Sep 17 00:00:00 2001
+Message-Id: <d31ebaf3eb3c4ead397c054cbe1a7dbfe331aad5@dist-git>
+From: Pino Toscano <ptoscano@redhat.com>
+Date: Thu, 12 Apr 2018 17:26:20 +0200
+Subject: [PATCH] internal: add STRCASEPREFIX
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Simple macro to check the prefix of a string in a case-insensitive way.
+
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+(cherry picked from commit e508e04b108709af0ca2c4d6728440b0edc3cc4b)
+
+https: //bugzilla.redhat.com/show_bug.cgi?id=1566524
+Signed-off-by: Pino Toscano <ptoscano@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/internal.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/internal.h b/src/internal.h
+index c29f20f022..f5e7a1886c 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -75,6 +75,7 @@
+ # define STRNEQLEN(a, b, n) (strncmp(a, b, n) != 0)
+ # define STRCASENEQLEN(a, b, n) (c_strncasecmp(a, b, n) != 0)
+ # define STRPREFIX(a, b) (strncmp(a, b, strlen(b)) == 0)
++# define STRCASEPREFIX(a, b) (c_strncasecmp(a, b, strlen(b)) == 0)
+ # define STRSKIP(a, b) (STRPREFIX(a, b) ? (a) + strlen(b) : NULL)
+ 
+ # define STREQ_NULLABLE(a, b)                           \
+-- 
+2.17.0
+

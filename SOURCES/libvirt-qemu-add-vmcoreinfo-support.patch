@@ -1,0 +1,342 @@
+From b66931b0282f0209a262854b54b590d008070f85 Mon Sep 17 00:00:00 2001
+Message-Id: <b66931b0282f0209a262854b54b590d008070f85@dist-git>
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Wed, 29 Nov 2017 17:00:04 +0100
+Subject: [PATCH] qemu: add vmcoreinfo support
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Starting from qemu 2.11, the `-device vmcoreinfo` will create a fw_cfg
+entry for a guest to store dump details, necessary to process kernel
+dump with KASLR enabled and providing additional kernel details.
+
+In essence, it is similar to -fw_cfg name=etc/vmcoreinfo,file=X but in
+this case it is not backed by a file, but collected by QEMU itself.
+
+Since the device is a singleton and shouldn't use additional hardware
+resources, it is presented as a <feature> element in the libvirt
+domain XML.
+
+The device is arm/x86 only for now (targets that support fw_cfg+dma).
+
+Related to:
+https://bugzilla.redhat.com/show_bug.cgi?id=1395248
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+(cherry picked from commit 7e4177a35bae49a53b04940be04418daaa988734)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in                          |  4 +++
+ docs/schemas/domaincommon.rng                      |  9 +++++
+ src/conf/domain_conf.c                             |  3 ++
+ src/conf/domain_conf.h                             |  1 +
+ src/qemu/qemu_capabilities.c                       |  3 +-
+ src/qemu/qemu_capabilities.h                       |  2 +-
+ src/qemu/qemu_command.c                            | 25 ++++++++++++++
+ .../qemuxml2argvdata/qemuxml2argv-vmcoreinfo.args  | 25 ++++++++++++++
+ tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.xml | 28 ++++++++++++++++
+ tests/qemuxml2argvtest.c                           |  1 +
+ .../qemuxml2xmlout-vmcoreinfo.xml                  | 38 ++++++++++++++++++++++
+ tests/qemuxml2xmltest.c                            |  1 +
+ 12 files changed, 138 insertions(+), 2 deletions(-)
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-vmcoreinfo.xml
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index cc1c5577cd..6807da5c6f 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -1940,6 +1940,10 @@
+           which is also known as a split I/O APIC mode.
+           <span class="since">Since 3.4.0</span> (QEMU/KVM only)
+       </dd>
++      <dt><code>vmcoreinfo</code></dt>
++      <dd>Enable QEMU vmcoreinfo device to let the guest kernel save debug
++          details. <span class="since">Since 3.10.0</span> (QEMU only)
++      </dd>
+     </dl>
+ 
+     <h3><a id="elementsTime">Time keeping</a></h3>
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 5576128db5..05709afc0c 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -4747,6 +4747,9 @@
+           <optional>
+             <ref name="hpt"/>
+           </optional>
++          <optional>
++            <ref name="vmcoreinfo"/>
++          </optional>
+         </interleave>
+       </element>
+     </optional>
+@@ -4947,6 +4950,12 @@
+     </element>
+   </define>
+ 
++  <define name="vmcoreinfo">
++    <element name="vmcoreinfo">
++      <empty/>
++    </element>
++  </define>
++
+   <define name="address">
+     <element name="address">
+       <choice>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index bd6d851f21..2d54037b71 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -150,6 +150,7 @@ VIR_ENUM_IMPL(virDomainFeature, VIR_DOMAIN_FEATURE_LAST,
+               "smm",
+               "ioapic",
+               "hpt",
++              "vmcoreinfo",
+ );
+ 
+ VIR_ENUM_IMPL(virDomainCapabilitiesPolicy, VIR_DOMAIN_CAPABILITIES_POLICY_LAST,
+@@ -18824,6 +18825,7 @@ virDomainDefParseXML(xmlDocPtr xml,
+         case VIR_DOMAIN_FEATURE_VIRIDIAN:
+         case VIR_DOMAIN_FEATURE_PRIVNET:
+         case VIR_DOMAIN_FEATURE_HYPERV:
++        case VIR_DOMAIN_FEATURE_VMCOREINFO:
+         case VIR_DOMAIN_FEATURE_KVM:
+             def->features[val] = VIR_TRISTATE_SWITCH_ON;
+             break;
+@@ -26265,6 +26267,7 @@ virDomainDefFormatInternal(virDomainDefPtr def,
+             case VIR_DOMAIN_FEATURE_ACPI:
+             case VIR_DOMAIN_FEATURE_PAE:
+             case VIR_DOMAIN_FEATURE_VIRIDIAN:
++            case VIR_DOMAIN_FEATURE_VMCOREINFO:
+             case VIR_DOMAIN_FEATURE_PRIVNET:
+                 switch ((virTristateSwitch) def->features[i]) {
+                 case VIR_TRISTATE_SWITCH_ABSENT:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 479a791f29..698d3280fe 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1735,6 +1735,7 @@ typedef enum {
+     VIR_DOMAIN_FEATURE_SMM,
+     VIR_DOMAIN_FEATURE_IOAPIC,
+     VIR_DOMAIN_FEATURE_HPT,
++    VIR_DOMAIN_FEATURE_VMCOREINFO,
+ 
+     VIR_DOMAIN_FEATURE_LAST
+ } virDomainFeature;
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 13ff1286c4..4301d2e799 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -444,7 +444,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "vxhs",
+               "virtio-blk.num-queues",
+               "machine.pseries.resize-hpt",
+-
++              "vmcoreinfo",
+               "spapr-vty",
+ 
+               /* 275 */
+@@ -1684,6 +1684,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "pcie-root-port", QEMU_CAPS_DEVICE_PCIE_ROOT_PORT },
+     { "qemu-xhci", QEMU_CAPS_DEVICE_QEMU_XHCI },
+     { "spapr-pci-host-bridge", QEMU_CAPS_DEVICE_SPAPR_PCI_HOST_BRIDGE },
++    { "vmcoreinfo", QEMU_CAPS_DEVICE_VMCOREINFO },
+     { "spapr-vty", QEMU_CAPS_DEVICE_SPAPR_VTY },
+     { "sclplmconsole", QEMU_CAPS_DEVICE_SCLPLMCONSOLE },
+     { "isa-serial", QEMU_CAPS_DEVICE_ISA_SERIAL },
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index 3e016b7c79..c6eb9df146 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -430,7 +430,7 @@ typedef enum {
+     QEMU_CAPS_VXHS, /* -drive file.driver=vxhs via query-qmp-schema */
+     QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES, /* virtio-blk-*.num-queues */
+     QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT, /* -machine pseries,resize-hpt */
+-
++    QEMU_CAPS_DEVICE_VMCOREINFO, /* -device vmcoreinfo */
+     QEMU_CAPS_DEVICE_SPAPR_VTY, /* -device spapr-vty */
+ 
+     /* 275 */
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index b462c7cf09..a1bf230fad 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9922,6 +9922,28 @@ qemuBuildTPMCommandLine(virCommandPtr cmd,
+ }
+ 
+ 
++static int
++qemuBuildVMCoreInfoCommandLine(virCommandPtr cmd,
++                               const virDomainDef *def,
++                               virQEMUCapsPtr qemuCaps)
++{
++    virTristateSwitch vmci = def->features[VIR_DOMAIN_FEATURE_VMCOREINFO];
++
++    if (vmci != VIR_TRISTATE_SWITCH_ON)
++        return 0;
++
++    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VMCOREINFO)) {
++        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                       _("vmcoreinfo is not available "
++                         "with this QEMU binary"));
++        return -1;
++    }
++
++    virCommandAddArgList(cmd, "-device", "vmcoreinfo", NULL);
++    return 0;
++}
++
++
+ static int
+ qemuBuildPanicCommandLine(virCommandPtr cmd,
+                           const virDomainDef *def,
+@@ -10341,6 +10363,9 @@ qemuBuildCommandLine(virQEMUDriverPtr driver,
+     if (qemuBuildNVRAMCommandLine(cmd, def, qemuCaps) < 0)
+         goto error;
+ 
++    if (qemuBuildVMCoreInfoCommandLine(cmd, def, qemuCaps) < 0)
++        goto error;
++
+     if (snapshot)
+         virCommandAddArgList(cmd, "-loadvm", snapshot->def->name, NULL);
+ 
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.args b/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.args
+new file mode 100644
+index 0000000000..772e5a071f
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.args
+@@ -0,0 +1,25 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-i686 \
++-name QEMUGuest1 \
++-S \
++-M pc \
++-m 214 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid c7a5fdbd-edaf-9455-926a-d65c16db1809 \
++-nographic \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-QEMUGuest1/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-no-acpi \
++-boot c \
++-usb \
++-drive file=/dev/HostVG/QEMUGuest1,format=raw,if=none,id=drive-ide0-0-0 \
++-device ide-drive,bus=ide.0,unit=0,drive=drive-ide0-0-0,id=ide0-0-0 \
++-device virtio-balloon-pci,id=balloon0,bus=pci.0,addr=0x3 \
++-device vmcoreinfo
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.xml b/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.xml
+new file mode 100644
+index 0000000000..f8e5865310
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-vmcoreinfo.xml
+@@ -0,0 +1,28 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <features>
++    <vmcoreinfo/>
++  </features>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <disk type='block' device='disk'>
++      <source dev='/dev/HostVG/QEMUGuest1'/>
++      <target dev='hda' bus='ide'/>
++      <address type='drive' controller='0' bus='0' target='0' unit='0'/>
++    </disk>
++    <controller type='ide' index='0'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 686a63855c..686d289b89 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -2933,6 +2933,7 @@ mymain(void)
+     DO_TEST_PARSE_ERROR("cpu-cache-emulate-l2", QEMU_CAPS_KVM);
+     DO_TEST_PARSE_ERROR("cpu-cache-passthrough3", QEMU_CAPS_KVM);
+     DO_TEST_PARSE_ERROR("cpu-cache-passthrough-l3", QEMU_CAPS_KVM);
++    DO_TEST("vmcoreinfo", QEMU_CAPS_DEVICE_VMCOREINFO);
+ 
+     DO_TEST("user-aliases", QEMU_CAPS_KVM, QEMU_CAPS_DEVICE_CIRRUS_VGA,
+             QEMU_CAPS_OBJECT_MEMORY_FILE, QEMU_CAPS_PIIX_DISABLE_S3,
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-vmcoreinfo.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-vmcoreinfo.xml
+new file mode 100644
+index 0000000000..a3922d6304
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-vmcoreinfo.xml
+@@ -0,0 +1,38 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219100</memory>
++  <currentMemory unit='KiB'>219100</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <features>
++    <vmcoreinfo/>
++  </features>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <disk type='block' device='disk'>
++      <source dev='/dev/HostVG/QEMUGuest1'/>
++      <target dev='hda' bus='ide'/>
++      <address type='drive' controller='0' bus='0' target='0' unit='0'/>
++    </disk>
++    <controller type='ide' index='0'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
++    </controller>
++    <controller type='usb' index='0'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
++    </controller>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
++    </memballoon>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmltest.c b/tests/qemuxml2xmltest.c
+index 8766646738..5ca0ea3a22 100644
+--- a/tests/qemuxml2xmltest.c
++++ b/tests/qemuxml2xmltest.c
+@@ -1319,6 +1319,7 @@ mymain(void)
+     DO_TEST("cpu-check-default-none2", NONE);
+     DO_TEST("cpu-check-default-partial", NONE);
+     DO_TEST("cpu-check-default-partial2", NONE);
++    DO_TEST("vmcoreinfo", NONE);
+ 
+     DO_TEST("smartcard-host", NONE);
+     DO_TEST("smartcard-host-certificates", NONE);
+-- 
+2.15.1
+

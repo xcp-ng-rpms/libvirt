@@ -1,0 +1,40 @@
+From 267d4074f4c6a543643e1fe8cd726953273a5bc6 Mon Sep 17 00:00:00 2001
+Message-Id: <267d4074f4c6a543643e1fe8cd726953273a5bc6@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Wed, 10 Jan 2018 15:56:21 +0100
+Subject: [PATCH] qemu: Ignore fallback CPU attribute on reconnect
+
+When reconnecting to a running domain with host-model CPU started by old
+libvirt which did not store the actual CPU in the status XML, we need to
+ignore the fallback attribute to make sure we can translate the detected
+host CPU model to a model which is supported by the running QEMU.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1532980
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 237f045d9a9d84a52e645b490d14ad0b66e5b8ed)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_process.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 701528c42c..c64088e4ca 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -3884,6 +3884,11 @@ qemuProcessUpdateCPU(virQEMUDriverPtr driver,
+     virDomainCapsCPUModelsPtr models = NULL;
+     int ret = -1;
+ 
++    /* The host CPU model comes from host caps rather than QEMU caps so
++     * fallback must be allowed no matter what the user specified in the XML.
++     */
++    vm->def->cpu->fallback = VIR_CPU_FALLBACK_ALLOW;
++
+     if (qemuProcessFetchGuestCPU(driver, vm, asyncJob, &cpu, &disabled) < 0)
+         goto cleanup;
+ 
+-- 
+2.15.1
+

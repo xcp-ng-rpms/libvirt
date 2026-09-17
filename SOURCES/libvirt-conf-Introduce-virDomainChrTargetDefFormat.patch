@@ -1,0 +1,115 @@
+From 10d833e6bb2798e23beb01ac50d6588bec15b8ad Mon Sep 17 00:00:00 2001
+Message-Id: <10d833e6bb2798e23beb01ac50d6588bec15b8ad@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:00 +0100
+Subject: [PATCH] conf: Introduce virDomainChrTargetDefFormat()
+
+Move formatting of the <target/> element for char devices out of
+virDomainChrDefFormat() and into its own function.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 00b7f81fa8f4e32a722ee2ccbb1862f03be062c0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 67 ++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 40 insertions(+), 27 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 586a840672..d68a5f415c 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -23936,38 +23936,15 @@ virDomainChrSourceDefFormat(virBufferPtr buf,
+     return -1;
+ }
+ 
++
+ static int
+-virDomainChrDefFormat(virBufferPtr buf,
+-                      virDomainChrDefPtr def,
+-                      unsigned int flags)
++virDomainChrTargetDefFormat(virBufferPtr buf,
++                            const virDomainChrDef *def,
++                            unsigned int flags)
+ {
+-    const char *elementName = virDomainChrDeviceTypeToString(def->deviceType);
+     const char *targetType = virDomainChrTargetTypeToString(def->deviceType,
+                                                             def->targetType);
+-    bool tty_compat;
+ 
+-    int ret = 0;
+-
+-    if (!elementName) {
+-        virReportError(VIR_ERR_INTERNAL_ERROR,
+-                       _("unexpected char device type %d"),
+-                       def->deviceType);
+-        return -1;
+-    }
+-
+-    virBufferAsprintf(buf, "<%s", elementName);
+-    virBufferAdjustIndent(buf, 2);
+-    tty_compat = (def->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
+-                  def->target.port == 0 &&
+-                  def->source->type == VIR_DOMAIN_CHR_TYPE_PTY &&
+-                  !(flags & VIR_DOMAIN_DEF_FORMAT_INACTIVE) &&
+-                  def->source->data.file.path);
+-    if (virDomainChrAttrsDefFormat(buf, def->source, tty_compat) < 0)
+-        return -1;
+-    virBufferAddLit(buf, ">\n");
+-    virDomainChrSourceDefFormat(buf, def->source, flags);
+-
+-    /* Format <target> block */
+     switch (def->deviceType) {
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL: {
+         if (!targetType) {
+@@ -24039,6 +24016,42 @@ virDomainChrDefFormat(virBufferPtr buf,
+         break;
+     }
+ 
++    return 0;
++}
++
++
++static int
++virDomainChrDefFormat(virBufferPtr buf,
++                      virDomainChrDefPtr def,
++                      unsigned int flags)
++{
++    const char *elementName = virDomainChrDeviceTypeToString(def->deviceType);
++    bool tty_compat;
++
++    int ret = 0;
++
++    if (!elementName) {
++        virReportError(VIR_ERR_INTERNAL_ERROR,
++                       _("unexpected char device type %d"),
++                       def->deviceType);
++        return -1;
++    }
++
++    virBufferAsprintf(buf, "<%s", elementName);
++    virBufferAdjustIndent(buf, 2);
++    tty_compat = (def->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
++                  def->target.port == 0 &&
++                  def->source->type == VIR_DOMAIN_CHR_TYPE_PTY &&
++                  !(flags & VIR_DOMAIN_DEF_FORMAT_INACTIVE) &&
++                  def->source->data.file.path);
++    if (virDomainChrAttrsDefFormat(buf, def->source, tty_compat) < 0)
++        return -1;
++    virBufferAddLit(buf, ">\n");
++    virDomainChrSourceDefFormat(buf, def->source, flags);
++
++    if (virDomainChrTargetDefFormat(buf, def, flags) < 0)
++       return -1;
++
+     virDomainDeviceInfoFormat(buf, &def->info, flags);
+ 
+     virBufferAdjustIndent(buf, -2);
+-- 
+2.15.1
+

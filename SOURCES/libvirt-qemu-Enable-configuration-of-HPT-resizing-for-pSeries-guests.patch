@@ -1,0 +1,299 @@
+From 6d24efd64d6de00d29f8bf2329940c427f5cc6f9 Mon Sep 17 00:00:00 2001
+Message-Id: <6d24efd64d6de00d29f8bf2329940c427f5cc6f9@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 15 Nov 2017 10:28:54 +0100
+Subject: [PATCH] qemu: Enable configuration of HPT resizing for pSeries guests
+
+Most of the time it's okay to leave this up to negotiation between
+the guest and the host, but in some situations it can be useful to
+manually decide the behavior, especially to enforce its availability.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1308743
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit 85b2ae96dfcf7dc324d6782f64c848fa412443e4)
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/schemas/domaincommon.rng                    | 15 ++++++++
+ src/conf/domain_conf.c                           | 46 +++++++++++++++++++++++-
+ src/conf/domain_conf.h                           | 12 +++++++
+ src/libvirt_private.syms                         |  1 +
+ src/qemu/qemu_capabilities.c                     |  8 +++++
+ src/qemu/qemu_capabilities.h                     |  1 +
+ src/qemu/qemu_command.c                          | 20 +++++++++++
+ src/qemu/qemu_domain.c                           |  8 +++++
+ tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml |  1 +
+ 9 files changed, 111 insertions(+), 1 deletion(-)
+
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 710b3af7f7..367861c1ea 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -4722,6 +4722,9 @@
+           <optional>
+             <ref name="ioapic"/>
+           </optional>
++          <optional>
++            <ref name="hpt"/>
++          </optional>
+         </interleave>
+       </element>
+     </optional>
+@@ -4910,6 +4913,18 @@
+     </element>
+   </define>
+ 
++  <define name="hpt">
++    <element name="hpt">
++      <attribute name="resizing">
++        <choice>
++          <value>enabled</value>
++          <value>disabled</value>
++          <value>required</value>
++        </choice>
++      </attribute>
++    </element>
++  </define>
++
+   <define name="address">
+     <element name="address">
+       <choice>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index ca5d0bcc54..641a978f07 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -148,7 +148,9 @@ VIR_ENUM_IMPL(virDomainFeature, VIR_DOMAIN_FEATURE_LAST,
+               "vmport",
+               "gic",
+               "smm",
+-              "ioapic")
++              "ioapic",
++              "hpt",
++);
+ 
+ VIR_ENUM_IMPL(virDomainCapabilitiesPolicy, VIR_DOMAIN_CAPABILITIES_POLICY_LAST,
+               "default",
+@@ -877,6 +879,13 @@ VIR_ENUM_IMPL(virDomainIOAPIC,
+               "qemu",
+               "kvm")
+ 
++VIR_ENUM_IMPL(virDomainHPTResizing,
++              VIR_DOMAIN_HPT_RESIZING_LAST,
++              "enabled",
++              "disabled",
++              "required",
++);
++
+ /* Internal mapping: subset of block job types that can be present in
+  * <mirror> XML (remaining types are not two-phase). */
+ VIR_ENUM_DECL(virDomainBlockJob)
+@@ -18765,6 +18774,22 @@ virDomainDefParseXML(xmlDocPtr xml,
+             }
+             break;
+ 
++        case VIR_DOMAIN_FEATURE_HPT:
++            tmp = virXMLPropString(nodes[i], "resizing");
++            if (tmp) {
++                int value = virDomainHPTResizingTypeFromString(tmp);
++                if (value < 0) {
++                    virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                                   _("Unknown HPT resizing setting: %s"),
++                                   tmp);
++                    goto error;
++                }
++                def->hpt_resizing = value;
++                def->features[val] = VIR_TRISTATE_SWITCH_ON;
++                VIR_FREE(tmp);
++            }
++            break;
++
+         /* coverity[dead_error_begin] */
+         case VIR_DOMAIN_FEATURE_LAST:
+             break;
+@@ -20955,6 +20980,18 @@ virDomainDefFeaturesCheckABIStability(virDomainDefPtr src,
+         return false;
+     }
+ 
++    /* HPT resizing */
++    if (src->features[VIR_DOMAIN_FEATURE_HPT] == VIR_TRISTATE_SWITCH_ON) {
++        if (src->hpt_resizing != dst->hpt_resizing) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                           _("HPT resizing configuration differs: "
++                             "source: '%s', destination: '%s'"),
++                           virDomainHPTResizingTypeToString(src->hpt_resizing),
++                           virDomainHPTResizingTypeToString(dst->hpt_resizing));
++            return false;
++        }
++    }
++
+     return true;
+ }
+ 
+@@ -26204,6 +26241,13 @@ virDomainDefFormatInternal(virDomainDefPtr def,
+                 }
+                 break;
+ 
++            case VIR_DOMAIN_FEATURE_HPT:
++                if (def->features[i] == VIR_TRISTATE_SWITCH_ON) {
++                    virBufferAsprintf(buf, "<hpt resizing='%s'/>\n",
++                                      virDomainHPTResizingTypeToString(def->hpt_resizing));
++                }
++                break;
++
+             /* coverity[dead_error_begin] */
+             case VIR_DOMAIN_FEATURE_LAST:
+                 break;
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 388fa92dda..f967e603d1 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1715,6 +1715,7 @@ typedef enum {
+     VIR_DOMAIN_FEATURE_GIC,
+     VIR_DOMAIN_FEATURE_SMM,
+     VIR_DOMAIN_FEATURE_IOAPIC,
++    VIR_DOMAIN_FEATURE_HPT,
+ 
+     VIR_DOMAIN_FEATURE_LAST
+ } virDomainFeature;
+@@ -1843,6 +1844,16 @@ typedef enum {
+ 
+ VIR_ENUM_DECL(virDomainIOAPIC);
+ 
++typedef enum {
++    VIR_DOMAIN_HPT_RESIZING_ENABLED = 0,
++    VIR_DOMAIN_HPT_RESIZING_DISABLED,
++    VIR_DOMAIN_HPT_RESIZING_REQUIRED,
++
++    VIR_DOMAIN_HPT_RESIZING_LAST
++} virDomainHPTResizing;
++
++VIR_ENUM_DECL(virDomainHPTResizing);
++
+ /* Operating system configuration data & machine / arch */
+ typedef struct _virDomainOSEnv virDomainOSEnv;
+ typedef virDomainOSEnv *virDomainOSEnvPtr;
+@@ -2315,6 +2326,7 @@ struct _virDomainDef {
+     virGICVersion gic_version;
+     char *hyperv_vendor_id;
+     virDomainIOAPIC ioapic;
++    virDomainHPTResizing hpt_resizing;
+ 
+     /* These options are of type virTristateSwitch: ON = keep, OFF = drop */
+     int caps_features[VIR_DOMAIN_CAPS_FEATURE_LAST];
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 6653f95722..8d1d4a896b 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -385,6 +385,7 @@ virDomainHostdevModeTypeToString;
+ virDomainHostdevRemove;
+ virDomainHostdevSubsysPCIBackendTypeToString;
+ virDomainHostdevSubsysTypeToString;
++virDomainHPTResizingTypeToString;
+ virDomainHubTypeFromString;
+ virDomainHubTypeToString;
+ virDomainHypervTypeFromString;
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 37a58b3640..3793f16590 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -443,6 +443,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               /* 270 */
+               "vxhs",
+               "virtio-blk.num-queues",
++              "machine.pseries.resize-hpt",
+     );
+ 
+ 
+@@ -4780,6 +4781,13 @@ virQEMUCapsInitQMPMonitor(virQEMUCapsPtr qemuCaps,
+     if (qemuCaps->version >= 2006000)
+         virQEMUCapsSet(qemuCaps, QEMU_CAPS_MACHINE_KERNEL_IRQCHIP_SPLIT);
+ 
++    /* HPT resizing is supported since QEMU 2.10 on ppc64; unfortunately
++     * there's no sane way to probe for it */
++    if (qemuCaps->version >= 2010000 &&
++        ARCH_IS_PPC64(qemuCaps->arch)) {
++        virQEMUCapsSet(qemuCaps, QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
++    }
++
+     if (virQEMUCapsProbeQMPCommands(qemuCaps, mon) < 0)
+         goto cleanup;
+ 
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index cacc2b77ed..f0e2e9016f 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -429,6 +429,7 @@ typedef enum {
+     /* 270 */
+     QEMU_CAPS_VXHS, /* -drive file.driver=vxhs via query-qmp-schema */
+     QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES, /* virtio-blk-*.num-queues */
++    QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT, /* -machine pseries,resize-hpt */
+ 
+     QEMU_CAPS_LAST /* this must always be the last item */
+ } virQEMUCapsFlags;
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index e60f93083f..aa7079229f 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -7566,6 +7566,26 @@ qemuBuildMachineCommandLine(virCommandPtr cmd,
+             }
+         }
+ 
++        if (def->features[VIR_DOMAIN_FEATURE_HPT] == VIR_TRISTATE_SWITCH_ON) {
++            const char *str;
++
++            if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT)) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("HTP resizing is not supported by this "
++                                 "QEMU binary"));
++                goto cleanup;
++            }
++
++            str = virDomainHPTResizingTypeToString(def->hpt_resizing);
++            if (!str) {
++                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
++                               _("Invalid setting for HPT resizing"));
++                goto cleanup;
++            }
++
++            virBufferAsprintf(&buf, ",resize-hpt=%s", str);
++        }
++
+         if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_BOOTINDEX) &&
+             virQEMUCapsGet(qemuCaps, QEMU_CAPS_LOADPARM))
+             qemuAppendLoadparmMachineParm(&buf, def);
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 81f45516af..485e085cea 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3109,6 +3109,14 @@ qemuDomainDefVerifyFeatures(const virDomainDef *def)
+         return -1;
+     }
+ 
++    if (def->features[VIR_DOMAIN_FEATURE_HPT] == VIR_TRISTATE_SWITCH_ON &&
++        !qemuDomainIsPSeries(def)) {
++        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                       "%s",
++                       _("HPT tuning is only supported for pSeries guests"));
++        return -1;
++    }
++
+     return 0;
+ }
+ 
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+index 0dfa20726c..b0ee3f1523 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+@@ -177,6 +177,7 @@
+   <flag name='virtio-gpu.max_outputs'/>
+   <flag name='vxhs'/>
+   <flag name='virtio-blk.num-queues'/>
++  <flag name='machine.pseries.resize-hpt'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
+   <package> (v2.10.0)</package>
+-- 
+2.15.0
+

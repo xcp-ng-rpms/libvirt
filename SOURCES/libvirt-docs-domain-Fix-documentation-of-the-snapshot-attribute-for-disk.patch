@@ -1,0 +1,51 @@
+From 60643d072a849ffbb01e8313124154f7aecc02ad Mon Sep 17 00:00:00 2001
+Message-Id: <60643d072a849ffbb01e8313124154f7aecc02ad@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 7 Dec 2017 14:36:06 +0100
+Subject: [PATCH] docs: domain: Fix documentation of the 'snapshot' attribute
+ for <disk>
+
+Emphasise the valid values by wrapping them in <code> and reword the
+last sentence so that the invalid value example can be dropped.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1523070
+(cherry picked from commit 1e98d450f27ae0131ac2ac8aa1c1d7a254d22dd1)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in | 19 +++++++++----------
+ 1 file changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index 6807da5c6f..0cfbf051b7 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -2573,17 +2573,16 @@
+           <dt><code>snapshot</code></dt>
+             <dd>
+             Indicates the default behavior of the disk during disk snapshots:
+-            "internal" requires a file format such as qcow2 that can store
+-            both the snapshot and the data changes since the snapshot;
+-            "external" will separate the snapshot from the live data; and
+-            "no" means the disk will not participate in snapshots. Read-only
+-            disks default to "no", while the default for other disks depends
+-            on the hypervisor's capabilities.  Some hypervisors allow a
+-            per-snapshot choice as well, during
++            "<code>internal</code>" requires a file format such as qcow2 that
++            can store both the snapshot and the data changes since the snapshot;
++            "<code>external</code>" will separate the snapshot from the live
++            data; and "<code>no</code>" means the disk will not participate in
++            snapshots. Read-only disks default to "<code>no</code>", while the
++            default for other disks depends on the hypervisor's capabilities.
++            Some hypervisors allow a per-snapshot choice as well, during
+             <a href="formatsnapshot.html">domain snapshot creation</a>.
+-            Not all snapshot modes are supported; for example,
+-            <code>snapshot='yes'</code> with a transient disk generally
+-            does not make sense.
++            Not all snapshot modes are supported; for example, enabling
++            snapshots with a transient disk generally does not make sense.
+             <span class="since">Since 0.9.5</span>
+             </dd>
+         </dl>
+-- 
+2.15.1
+

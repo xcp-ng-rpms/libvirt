@@ -1,0 +1,60 @@
+From 0c9561ff6de749954395f562cbb8e3d12954566c Mon Sep 17 00:00:00 2001
+Message-Id: <0c9561ff6de749954395f562cbb8e3d12954566c@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:22:57 +0100
+Subject: [PATCH] conf: Run devicePostParse() again for the first serial device
+
+The devicePostParse() callback is invoked for all devices so that
+drivers have a chance to set their own specific values; however,
+virDomainDefAddImplicitDevices() runs *after* the devicePostParse()
+callbacks have been invoked and can add new devices, in which case
+the driver wouldn't have a chance to customize them.
+
+Work around the issue by invoking the devicePostParse() callback
+after virDomainDefAddImplicitDevices(), only for the first serial
+devices, which might have been added by it. The same was already
+happening for the first video device for the very same reason.
+
+This will become important later on, when we will change
+virDomainDefAddConsoleCompat() not to set a targetType for
+automatically added serial devices.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 2628afc143224d38e6ef8c06a8fbec1d0f69fb86)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 4b5e7c214f..41674a85af 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -4948,6 +4948,18 @@ virDomainDefPostParseCommon(virDomainDefPtr def,
+             return -1;
+     }
+ 
++    if (def->nserials != 0) {
++        virDomainDeviceDef device = {
++            .type = VIR_DOMAIN_DEVICE_CHR,
++            .data.chr = def->serials[0],
++        };
++
++        /* serials[0] might have been added in AddImplicitDevices, after we've
++         * done the per-device post-parse */
++        if (virDomainDefPostParseDeviceIterator(def, &device, NULL, data) < 0)
++            return -1;
++    }
++
+     /* clean up possibly duplicated metadata entries */
+     virXMLNodeSanitizeNamespaces(def->metadata);
+ 
+-- 
+2.15.1
+

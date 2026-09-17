@@ -1,0 +1,253 @@
+From f39b12fb966c2dfe7841a299f00ff5c6fa68095e Mon Sep 17 00:00:00 2001
+Message-Id: <f39b12fb966c2dfe7841a299f00ff5c6fa68095e@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:07 +0100
+Subject: [PATCH] conf: Parse and format virDomainChrSerialTargetModel
+
+This information will be used to select, and store in the guest
+configuration in order to guarantee ABI stability, the concrete
+(hypervisor-specific) model for serial devices.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 5ad9d9afd4738ea716a6f820bbb53eecf5604a2f)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in     | 16 ++++++++--
+ docs/schemas/domaincommon.rng | 15 +++++++++
+ src/conf/domain_conf.c        | 72 ++++++++++++++++++++++++++++++++++++++++++-
+ src/conf/domain_conf.h        | 12 ++++++++
+ 4 files changed, 112 insertions(+), 3 deletions(-)
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index f57a124056..cf1167b9c6 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -6447,7 +6447,9 @@ qemu-kvm -net nic,model=? /dev/null
+ &lt;devices&gt;
+   &lt;!-- USB serial port --&gt;
+   &lt;serial type='pty'&gt;
+-    &lt;target type='usb-serial' port='0'/&gt;
++    &lt;target type='usb-serial' port='0'&gt;
++      &lt;model name='usb-serial'/&gt;
++    &lt;/target&gt;
+     &lt;address type='usb' bus='0' port='1'/&gt;
+   &lt;/serial&gt;
+ &lt;/devices&gt;
+@@ -6463,6 +6465,16 @@ qemu-kvm -net nic,model=? /dev/null
+       is available).
+     </p>
+ 
++    <p>
++      <span class="since">Since 3.10.0</span>, the <code>target</code>
++      element can have an optional <code>model</code> subelement;
++      valid values for its <code>name</code> attribute are:
++      <code>isa-serial</code> (usable with the <code>isa-serial</code> target
++      type); <code>usb-serial</code> (usable with the <code>usb-serial</code>
++      target type); <code>pci-serial</code>
++      (usable with the <code>pci-serial</code> target type).
++    </p>
++
+     <p>
+       If any of the attributes is not specified by the user, libvirt will
+       choose a value suitable for most users.
+@@ -6489,7 +6501,7 @@ qemu-kvm -net nic,model=? /dev/null
+   &lt;!-- Serial console --&gt;
+   &lt;console type='pty'&gt;
+     &lt;source path='/dev/pts/2'/&gt;
+-    &lt;target type='serial' port='0'/&gt;
++   &lt;target type='serial' port='0'/&gt;
+   &lt;/console&gt;
+ &lt;/devices&gt;
+ ...</pre>
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 367861c1ea..3630e539e6 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -3575,6 +3575,18 @@
+     </attribute>
+   </define>
+ 
++  <define name='qemucdevSerialTgtModel'>
++    <element name='model'>
++      <attribute name='name'>
++        <choice>
++          <value>isa-serial</value>
++          <value>usb-serial</value>
++          <value>pci-serial</value>
++        </choice>
++      </attribute>
++    </element>
++  </define>
++
+   <define  name="qemucdevTgtDef">
+     <element name="target">
+       <interleave>
+@@ -3589,6 +3601,9 @@
+         <optional>
+           <attribute name="port"/>
+         </optional>
++        <optional>
++          <ref name="qemucdevSerialTgtModel"/>
++        </optional>
+       </interleave>
+     </element>
+   </define>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 44d9bbe01d..692b9d9414 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -465,6 +465,14 @@ VIR_ENUM_IMPL(virDomainChrConsoleTarget,
+               "sclp",
+               "sclplm")
+ 
++VIR_ENUM_IMPL(virDomainChrSerialTargetModel,
++              VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST,
++              "none",
++              "isa-serial",
++              "usb-serial",
++              "pci-serial",
++);
++
+ VIR_ENUM_IMPL(virDomainChrDevice, VIR_DOMAIN_CHR_DEVICE_TYPE_LAST,
+               "parallel",
+               "serial",
+@@ -11530,14 +11538,42 @@ virDomainChrTargetTypeFromString(int devtype,
+     return ret;
+ }
+ 
++static int
++virDomainChrTargetModelFromString(int devtype,
++                                  const char *targetModel)
++{
++    int ret = -1;
++
++    if (!targetModel)
++        return 0;
++
++    switch ((virDomainChrDeviceType) devtype) {
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL:
++        ret = virDomainChrSerialTargetModelTypeFromString(targetModel);
++        break;
++
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL:
++    case VIR_DOMAIN_CHR_DEVICE_TYPE_LAST:
++        /* Target model not supported yet */
++        ret = 0;
++        break;
++    }
++
++    return ret;
++}
++
+ static int
+ virDomainChrDefParseTargetXML(virDomainChrDefPtr def,
+                               xmlNodePtr cur,
+                               unsigned int flags)
+ {
+     int ret = -1;
++    xmlNodePtr child;
+     unsigned int port;
+     char *targetType = virXMLPropString(cur, "type");
++    char *targetModel = NULL;
+     char *addrStr = NULL;
+     char *portStr = NULL;
+     char *stateStr = NULL;
+@@ -11551,6 +11587,24 @@ virDomainChrDefParseTargetXML(virDomainChrDefPtr def,
+         goto error;
+     }
+ 
++    child = cur->children;
++    while (child != NULL) {
++        if (child->type == XML_ELEMENT_NODE &&
++            virXMLNodeNameEqual(child, "model")) {
++            targetModel = virXMLPropString(child, "name");
++        }
++        child = child->next;
++    }
++
++    if ((def->targetModel =
++         virDomainChrTargetModelFromString(def->deviceType,
++                                           targetModel)) < 0) {
++        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                       _("unknown target model '%s' specified for character device"),
++                       targetModel);
++        goto error;
++    }
++
+     switch (def->deviceType) {
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL:
+         switch (def->targetType) {
+@@ -11639,6 +11693,7 @@ virDomainChrDefParseTargetXML(virDomainChrDefPtr def,
+     ret = 0;
+  error:
+     VIR_FREE(targetType);
++    VIR_FREE(targetModel);
+     VIR_FREE(addrStr);
+     VIR_FREE(portStr);
+     VIR_FREE(stateStr);
+@@ -24019,8 +24074,23 @@ virDomainChrTargetDefFormat(virBufferPtr buf,
+         }
+ 
+         virBufferAsprintf(buf,
+-                          "port='%d'/>\n",
++                          "port='%d'",
+                           def->target.port);
++
++        if (def->targetModel != VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE) {
++            virBufferAddLit(buf, ">\n");
++
++            virBufferAdjustIndent(buf, 2);
++            virBufferAsprintf(buf,
++                              "<model name='%s'/>\n",
++                              virDomainChrSerialTargetModelTypeToString(def->targetModel));
++            virBufferAdjustIndent(buf, -2);
++
++            virBufferAddLit(buf, "</target>\n");
++        } else {
++            virBufferAddLit(buf, "/>\n");
++        }
++
+         break;
+ 
+     case VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index bbb056cf21..9dfe9388cd 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1104,6 +1104,17 @@ typedef enum {
+     VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_LAST
+ } virDomainChrConsoleTargetType;
+ 
++typedef enum {
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE = 0,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL,
++
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST
++} virDomainChrSerialTargetModel;
++
++VIR_ENUM_DECL(virDomainChrSerialTargetModel);
++
+ typedef enum {
+     VIR_DOMAIN_CHR_TYPE_NULL,
+     VIR_DOMAIN_CHR_TYPE_VC,
+@@ -1202,6 +1213,7 @@ struct _virDomainChrDef {
+     int targetType; /* enum virDomainChrConsoleTargetType ||
+                        enum virDomainChrChannelTargetType ||
+                        enum virDomainChrSerialTargetType according to deviceType */
++    int targetModel; /* enum virDomainChrSerialTargetModel */
+ 
+     union {
+         int port; /* parallel, serial, console */
+-- 
+2.15.1
+

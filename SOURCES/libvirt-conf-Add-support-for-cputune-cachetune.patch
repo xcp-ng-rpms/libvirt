@@ -1,0 +1,794 @@
+From ba1ce05bd6e49217cd8c89b75e741e518d2b9292 Mon Sep 17 00:00:00 2001
+Message-Id: <ba1ce05bd6e49217cd8c89b75e741e518d2b9292@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:30 +0100
+Subject: [PATCH] conf: Add support for cputune/cachetune
+
+More info in the documentation, this is basically the XML parsing/formatting
+support, schemas, tests and documentation for the new cputune/cachetune element
+that will get used by following patches.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 7387e3fea44e28118e1f72841d79503849e15985)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Downstream changes:
+
+- Rename test XML files due to ab7a2fe230bb742cc4bc7f8d1475201b97fe49ab
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ docs/formatdomain.html.in                          |  54 ++++
+ docs/schemas/domaincommon.rng                      |  32 +++
+ src/conf/domain_conf.c                             | 295 ++++++++++++++++++++-
+ src/conf/domain_conf.h                             |  13 +
+ .../genericxml2xmlindata/generic-cachetune-cdp.xml |  36 +++
+ .../generic-cachetune-colliding-allocs.xml         |  30 +++
+ .../generic-cachetune-colliding-tunes.xml          |  32 +++
+ .../generic-cachetune-colliding-types.xml          |  30 +++
+ .../generic-cachetune-small.xml                    |  29 ++
+ tests/genericxml2xmlindata/generic-cachetune.xml   |  33 +++
+ tests/genericxml2xmltest.c                         |  10 +
+ 11 files changed, 592 insertions(+), 2 deletions(-)
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-cdp.xml
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-colliding-allocs.xml
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-colliding-tunes.xml
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-colliding-types.xml
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune-small.xml
+ create mode 100644 tests/genericxml2xmlindata/generic-cachetune.xml
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index 0cfbf051b7..f33261d05c 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -689,6 +689,10 @@
+     &lt;iothread_quota&gt;-1&lt;/iothread_quota&gt;
+     &lt;vcpusched vcpus='0-4,^3' scheduler='fifo' priority='1'/&gt;
+     &lt;iothreadsched iothreads='2' scheduler='batch'/&gt;
++    &lt;cachetune vcpus='0-3'&gt;
++      &lt;cache id='0' level='3' type='both' size='3' unit='MiB'/&gt;
++      &lt;cache id='1' level='3' type='both' size='3' unit='MiB'/&gt;
++    &lt;/cachetune&gt;
+   &lt;/cputune&gt;
+   ...
+ &lt;/domain&gt;
+@@ -834,6 +838,56 @@
+         <span class="since">Since 1.2.13</span>
+       </dd>
+ 
++      <dt><code>cachetune</code><span class="since">Since 4.1.0</span></dt>
++      <dd>
++        Optional <code>cachetune</code> element can control allocations for CPU
++        caches using the resctrl on the host. Whether or not is this supported
++        can be gathered from capabilities where some limitations like minimum
++        size and required granularity are reported as well. The required
++        attribute <code>vcpus</code> specifies to which vCPUs this allocation
++        applies. A vCPU can only be member of one <code>cachetune</code> element
++        allocations. Supported subelements are:
++        <dl>
++          <dt><code>cache</code></dt>
++          <dd>
++            This element controls the allocation of CPU cache and has the
++            following attributes:
++            <dl>
++              <dt><code>level</code></dt>
++              <dd>
++                Host cache level from which to allocate.
++              </dd>
++              <dt><code>id</code></dt>
++              <dd>
++                Host cache id from which to allocate.
++              </dd>
++              <dt><code>type</code></dt>
++              <dd>
++                Type of allocation. Can be <code>code</code> for code
++                (instructions), <code>data</code> for data or <code>both</code>
++                for both code and data (unified). Currently the allocation can
++                be done only with the same type as the host supports, meaning
++                you cannot request <code>both</code> for host with CDP
++                (code/data prioritization) enabled.
++              </dd>
++              <dt><code>size</code></dt>
++              <dd>
++                The size of the region to allocate. The value by default is in
++                bytes, but the <code>unit</code> attribute can be used to scale
++                the value.
++              </dd>
++              <dt><code>unit</code> (optional)</dt>
++              <dd>
++                If specified it is the unit such as KiB, MiB, GiB, or TiB
++                (described in the <code>memory</code> element
++                for <a href="#elementsMemoryAllocation">Memory Allocation</a>)
++                in which <code>size</code> is specified, defaults to bytes.
++              </dd>
++            </dl>
++          </dd>
++        </dl>
++
++      </dd>
+     </dl>
+ 
+ 
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 05709afc0c..564674b659 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -900,6 +900,38 @@
+             <ref name="schedparam"/>
+           </element>
+         </zeroOrMore>
++        <zeroOrMore>
++          <element name="cachetune">
++            <attribute name="vcpus">
++              <ref name='cpuset'/>
++            </attribute>
++            <oneOrMore>
++              <element name="cache">
++                <attribute name="id">
++                  <ref name='unsignedInt'/>
++                </attribute>
++                <attribute name="level">
++                  <ref name='unsignedInt'/>
++                </attribute>
++                <attribute name="type">
++                  <choice>
++                    <value>both</value>
++                    <value>code</value>
++                    <value>data</value>
++                  </choice>
++                </attribute>
++                <attribute name="size">
++                  <ref name='unsignedLong'/>
++                </attribute>
++                <optional>
++                  <attribute name='unit'>
++                    <ref name='unit'/>
++                  </attribute>
++                </optional>
++              </element>
++            </oneOrMore>
++          </element>
++        </zeroOrMore>
+       </interleave>
+     </element>
+   </define>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index ad9c16a1e0..181b035647 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -2886,6 +2886,19 @@ virDomainLoaderDefFree(virDomainLoaderDefPtr loader)
+     VIR_FREE(loader);
+ }
+ 
++
++static void
++virDomainCachetuneDefFree(virDomainCachetuneDefPtr cachetune)
++{
++    if (!cachetune)
++        return;
++
++    virObjectUnref(cachetune->alloc);
++    virBitmapFree(cachetune->vcpus);
++    VIR_FREE(cachetune);
++}
++
++
+ void virDomainDefFree(virDomainDefPtr def)
+ {
+     size_t i;
+@@ -3058,6 +3071,10 @@ void virDomainDefFree(virDomainDefPtr def)
+         virDomainShmemDefFree(def->shmems[i]);
+     VIR_FREE(def->shmems);
+ 
++    for (i = 0; i < def->ncachetunes; i++)
++        virDomainCachetuneDefFree(def->cachetunes[i]);
++    VIR_FREE(def->cachetunes);
++
+     VIR_FREE(def->keywrap);
+ 
+     if (def->namespaceData && def->ns.free)
+@@ -18233,6 +18250,194 @@ virDomainDefParseBootOptions(virDomainDefPtr def,
+ }
+ 
+ 
++static int
++virDomainCachetuneDefParseCache(xmlXPathContextPtr ctxt,
++                                xmlNodePtr node,
++                                virResctrlAllocPtr alloc)
++{
++    xmlNodePtr oldnode = ctxt->node;
++    unsigned int level;
++    unsigned int cache;
++    int type;
++    unsigned long long size;
++    char *tmp = NULL;
++    int ret = -1;
++
++    ctxt->node = node;
++
++    tmp = virXMLPropString(node, "id");
++    if (!tmp) {
++        virReportError(VIR_ERR_XML_ERROR, "%s",
++                       _("Missing cachetune attribute 'id'"));
++        goto cleanup;
++    }
++    if (virStrToLong_uip(tmp, NULL, 10, &cache) < 0) {
++        virReportError(VIR_ERR_XML_ERROR,
++                       _("Invalid cachetune attribute 'id' value '%s'"),
++                       tmp);
++        goto cleanup;
++    }
++    VIR_FREE(tmp);
++
++    tmp = virXMLPropString(node, "level");
++    if (!tmp) {
++        virReportError(VIR_ERR_XML_ERROR, "%s",
++                       _("Missing cachetune attribute 'level'"));
++        goto cleanup;
++    }
++    if (virStrToLong_uip(tmp, NULL, 10, &level) < 0) {
++        virReportError(VIR_ERR_XML_ERROR,
++                       _("Invalid cachetune attribute 'level' value '%s'"),
++                       tmp);
++        goto cleanup;
++    }
++    VIR_FREE(tmp);
++
++    tmp = virXMLPropString(node, "type");
++    if (!tmp) {
++        virReportError(VIR_ERR_XML_ERROR, "%s",
++                       _("Missing cachetune attribute 'type'"));
++        goto cleanup;
++    }
++    type = virCacheTypeFromString(tmp);
++    if (type < 0) {
++        virReportError(VIR_ERR_XML_ERROR,
++                       _("Invalid cachetune attribute 'type' value '%s'"),
++                       tmp);
++        goto cleanup;
++    }
++    VIR_FREE(tmp);
++
++    if (virDomainParseScaledValue("./@size", "./@unit",
++                                  ctxt, &size, 1024,
++                                  ULLONG_MAX, true) < 0)
++        goto cleanup;
++
++    if (virResctrlAllocSetSize(alloc, level, type, cache, size) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    ctxt->node = oldnode;
++    VIR_FREE(tmp);
++    return ret;
++}
++
++
++static int
++virDomainCachetuneDefParse(virDomainDefPtr def,
++                           xmlXPathContextPtr ctxt,
++                           xmlNodePtr node,
++                           unsigned int flags)
++{
++    xmlNodePtr oldnode = ctxt->node;
++    xmlNodePtr *nodes = NULL;
++    virBitmapPtr vcpus = NULL;
++    virResctrlAllocPtr alloc = virResctrlAllocNew();
++    virDomainCachetuneDefPtr tmp_cachetune = NULL;
++    char *tmp = NULL;
++    char *vcpus_str = NULL;
++    char *alloc_id = NULL;
++    ssize_t i = 0;
++    int n;
++    int ret = -1;
++
++    ctxt->node = node;
++
++    if (!alloc)
++        goto cleanup;
++
++    if (VIR_ALLOC(tmp_cachetune) < 0)
++        goto cleanup;
++
++    vcpus_str = virXMLPropString(node, "vcpus");
++    if (!vcpus_str) {
++        virReportError(VIR_ERR_XML_ERROR, "%s",
++                       _("Missing cachetune attribute 'vcpus'"));
++        goto cleanup;
++    }
++    if (virBitmapParse(vcpus_str, &vcpus, VIR_DOMAIN_CPUMASK_LEN) < 0) {
++        virReportError(VIR_ERR_XML_ERROR,
++                       _("Invalid cachetune attribute 'vcpus' value '%s'"),
++                       vcpus_str);
++        goto cleanup;
++    }
++
++    /* We need to limit the bitmap to number of vCPUs.  If there's nothing left,
++     * then we can just clean up and return 0 immediately */
++    virBitmapShrink(vcpus, def->maxvcpus);
++    if (virBitmapIsAllClear(vcpus)) {
++        ret = 0;
++        goto cleanup;
++    }
++
++    if ((n = virXPathNodeSet("./cache", ctxt, &nodes)) < 0) {
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("Cannot extract cache nodes under cachetune"));
++        goto cleanup;
++    }
++
++    for (i = 0; i < n; i++) {
++        if (virDomainCachetuneDefParseCache(ctxt, nodes[i], alloc) < 0)
++            goto cleanup;
++    }
++
++    if (virResctrlAllocIsEmpty(alloc)) {
++        ret = 0;
++        goto cleanup;
++    }
++
++    for (i = 0; i < def->ncachetunes; i++) {
++        if (virBitmapOverlaps(def->cachetunes[i]->vcpus, vcpus)) {
++            virReportError(VIR_ERR_XML_ERROR, "%s",
++                           _("Overlapping vcpus in cachetunes"));
++            goto cleanup;
++        }
++    }
++
++    /* We need to format it back because we need to be consistent in the naming
++     * even when users specify some "sub-optimal" string there. */
++    VIR_FREE(vcpus_str);
++    vcpus_str = virBitmapFormat(vcpus);
++    if (!vcpus_str)
++        goto cleanup;
++
++    if (!(flags & VIR_DOMAIN_DEF_PARSE_INACTIVE))
++        alloc_id = virXMLPropString(node, "id");
++
++    if (!alloc_id) {
++        /* The number of allocations is limited and the directory structure is flat,
++         * not hierarchical, so we need to have all same allocations in one
++         * directory, so it's nice to have it named appropriately.  For now it's
++         * 'vcpus_...' but it's designed in order for it to be changeable in the
++         * future (it's part of the status XML). */
++        if (virAsprintf(&alloc_id, "vcpus_%s", vcpus_str) < 0)
++            goto cleanup;
++    }
++
++    if (virResctrlAllocSetID(alloc, alloc_id) < 0)
++        goto cleanup;
++
++    VIR_STEAL_PTR(tmp_cachetune->vcpus, vcpus);
++    VIR_STEAL_PTR(tmp_cachetune->alloc, alloc);
++
++    if (VIR_APPEND_ELEMENT(def->cachetunes, def->ncachetunes, tmp_cachetune) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    ctxt->node = oldnode;
++    virDomainCachetuneDefFree(tmp_cachetune);
++    virObjectUnref(alloc);
++    virBitmapFree(vcpus);
++    VIR_FREE(alloc_id);
++    VIR_FREE(vcpus_str);
++    VIR_FREE(nodes);
++    VIR_FREE(tmp);
++    return ret;
++}
++
++
+ static virDomainDefPtr
+ virDomainDefParseXML(xmlDocPtr xml,
+                      xmlNodePtr root,
+@@ -18785,6 +18990,18 @@ virDomainDefParseXML(xmlDocPtr xml,
+     }
+     VIR_FREE(nodes);
+ 
++    if ((n = virXPathNodeSet("./cputune/cachetune", ctxt, &nodes)) < 0) {
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("cannot extract cachetune nodes"));
++        goto error;
++    }
++
++    for (i = 0; i < n; i++) {
++        if (virDomainCachetuneDefParse(def, ctxt, nodes[i], flags) < 0)
++            goto error;
++    }
++    VIR_FREE(nodes);
++
+     if (virCPUDefParseXML(ctxt, "./cpu[1]", VIR_CPU_TYPE_GUEST, &def->cpu) < 0)
+         goto error;
+ 
+@@ -25736,9 +25953,80 @@ virDomainSchedulerFormat(virBufferPtr buf,
+ }
+ 
+ 
++static int
++virDomainCachetuneDefFormatHelper(unsigned int level,
++                                  virCacheType type,
++                                  unsigned int cache,
++                                  unsigned long long size,
++                                  void *opaque)
++{
++    const char *unit;
++    virBufferPtr buf = opaque;
++    unsigned long long short_size = virFormatIntPretty(size, &unit);
++
++    virBufferAsprintf(buf,
++                      "<cache id='%u' level='%u' type='%s' "
++                      "size='%llu' unit='%s'/>\n",
++                      cache, level, virCacheTypeToString(type),
++                      short_size, unit);
++
++    return 0;
++}
++
++
++static int
++virDomainCachetuneDefFormat(virBufferPtr buf,
++                            virDomainCachetuneDefPtr cachetune,
++                            unsigned int flags)
++{
++    virBuffer childrenBuf = VIR_BUFFER_INITIALIZER;
++    char *vcpus = NULL;
++    int ret = -1;
++
++    virBufferSetChildIndent(&childrenBuf, buf);
++    virResctrlAllocForeachSize(cachetune->alloc,
++                               virDomainCachetuneDefFormatHelper,
++                               &childrenBuf);
++
++
++    if (virBufferCheckError(&childrenBuf) < 0)
++        goto cleanup;
++
++    if (!virBufferUse(&childrenBuf)) {
++        ret = 0;
++        goto cleanup;
++    }
++
++    vcpus = virBitmapFormat(cachetune->vcpus);
++    if (!vcpus)
++        goto cleanup;
++
++    virBufferAsprintf(buf, "<cachetune vcpus='%s'", vcpus);
++
++    if (!(flags & VIR_DOMAIN_DEF_FORMAT_INACTIVE)) {
++        const char *alloc_id = virResctrlAllocGetID(cachetune->alloc);
++        if (!alloc_id)
++            goto cleanup;
++
++        virBufferAsprintf(buf, " id='%s'", alloc_id);
++    }
++    virBufferAddLit(buf, ">\n");
++
++    virBufferAddBuffer(buf, &childrenBuf);
++    virBufferAddLit(buf, "</cachetune>\n");
++
++    ret = 0;
++ cleanup:
++    virBufferFreeAndReset(&childrenBuf);
++    VIR_FREE(vcpus);
++    return ret;
++}
++
++
+ static int
+ virDomainCputuneDefFormat(virBufferPtr buf,
+-                          virDomainDefPtr def)
++                          virDomainDefPtr def,
++                          unsigned int flags)
+ {
+     size_t i;
+     virBuffer childrenBuf = VIR_BUFFER_INITIALIZER;
+@@ -25837,6 +26125,9 @@ virDomainCputuneDefFormat(virBufferPtr buf,
+                                  def->iothreadids[i]->iothread_id);
+     }
+ 
++    for (i = 0; i < def->ncachetunes; i++)
++        virDomainCachetuneDefFormat(&childrenBuf, def->cachetunes[i], flags);
++
+     if (virBufferCheckError(&childrenBuf) < 0)
+         return -1;
+ 
+@@ -26174,7 +26465,7 @@ virDomainDefFormatInternal(virDomainDefPtr def,
+         }
+     }
+ 
+-    if (virDomainCputuneDefFormat(buf, def) < 0)
++    if (virDomainCputuneDefFormat(buf, def, flags) < 0)
+         goto error;
+ 
+     if (virDomainNumatuneFormatXML(buf, def->numa) < 0)
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 5e67c9a9c1..ed7b587bed 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -56,6 +56,7 @@
+ # include "virperf.h"
+ # include "virtypedparam.h"
+ # include "virsavecookie.h"
++# include "virresctrl.h"
+ 
+ /* forward declarations of all device types, required by
+  * virDomainDeviceDef
+@@ -2190,6 +2191,15 @@ struct _virDomainCputune {
+ };
+ 
+ 
++typedef struct _virDomainCachetuneDef virDomainCachetuneDef;
++typedef virDomainCachetuneDef *virDomainCachetuneDefPtr;
++
++struct _virDomainCachetuneDef {
++    virBitmapPtr vcpus;
++    virResctrlAllocPtr alloc;
++};
++
++
+ typedef struct _virDomainVcpuDef virDomainVcpuDef;
+ typedef virDomainVcpuDef *virDomainVcpuDefPtr;
+ 
+@@ -2318,6 +2328,9 @@ struct _virDomainDef {
+ 
+     virDomainCputune cputune;
+ 
++    virDomainCachetuneDefPtr *cachetunes;
++    size_t ncachetunes;
++
+     virDomainNumaPtr numa;
+     virDomainResourceDefPtr resource;
+     virDomainIdMapDef idmap;
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-cdp.xml b/tests/genericxml2xmlindata/generic-cachetune-cdp.xml
+new file mode 100644
+index 0000000000..9718f06098
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-cdp.xml
+@@ -0,0 +1,36 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0-1'>
++      <cache id='0' level='3' type='code' size='7680' unit='KiB'/>
++      <cache id='1' level='3' type='data' size='3840' unit='KiB'/>
++    </cachetune>
++    <cachetune vcpus='2'>
++      <cache id='1' level='3' type='code' size='6' unit='MiB'/>
++    </cachetune>
++    <cachetune vcpus='3'>
++      <cache id='1' level='3' type='data' size='6912' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-colliding-allocs.xml b/tests/genericxml2xmlindata/generic-cachetune-colliding-allocs.xml
+new file mode 100644
+index 0000000000..82c9176cba
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-colliding-allocs.xml
+@@ -0,0 +1,30 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0'>
++      <cache id='0' level='3' type='code' size='12' unit='KiB'/>
++      <cache id='0' level='3' type='code' size='18' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-colliding-tunes.xml b/tests/genericxml2xmlindata/generic-cachetune-colliding-tunes.xml
+new file mode 100644
+index 0000000000..a0f37028c9
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-colliding-tunes.xml
+@@ -0,0 +1,32 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0'>
++      <cache id='0' level='3' type='code' size='12' unit='KiB'/>
++    </cachetune>
++    <cachetune vcpus='0'>
++      <cache id='0' level='3' type='data' size='18' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-colliding-types.xml b/tests/genericxml2xmlindata/generic-cachetune-colliding-types.xml
+new file mode 100644
+index 0000000000..c229eccee4
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-colliding-types.xml
+@@ -0,0 +1,30 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0-1'>
++      <cache id='0' level='3' type='both' size='12' unit='KiB'/>
++      <cache id='0' level='3' type='code' size='6' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmlindata/generic-cachetune-small.xml b/tests/genericxml2xmlindata/generic-cachetune-small.xml
+new file mode 100644
+index 0000000000..ab2d9cf885
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune-small.xml
+@@ -0,0 +1,29 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0-1'>
++      <cache id='0' level='3' type='both' size='768' unit='KiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmlindata/generic-cachetune.xml b/tests/genericxml2xmlindata/generic-cachetune.xml
+new file mode 100644
+index 0000000000..645cab7771
+--- /dev/null
++++ b/tests/genericxml2xmlindata/generic-cachetune.xml
+@@ -0,0 +1,33 @@
++<domain type='qemu'>
++  <name>QEMUGuest1</name>
++  <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
++  <memory unit='KiB'>219136</memory>
++  <currentMemory unit='KiB'>219136</currentMemory>
++  <vcpu placement='static'>4</vcpu>
++  <cputune>
++    <cachetune vcpus='0-1'>
++      <cache id='0' level='3' type='both' size='3' unit='MiB'/>
++      <cache id='1' level='3' type='both' size='3' unit='MiB'/>
++    </cachetune>
++    <cachetune vcpus='3'>
++      <cache id='0' level='3' type='both' size='3' unit='MiB'/>
++    </cachetune>
++  </cputune>
++  <os>
++    <type arch='i686' machine='pc'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-i686</emulator>
++    <controller type='usb' index='0'/>
++    <controller type='ide' index='0'/>
++    <controller type='pci' index='0' model='pci-root'/>
++    <input type='mouse' bus='ps2'/>
++    <input type='keyboard' bus='ps2'/>
++    <memballoon model='virtio'/>
++  </devices>
++</domain>
+diff --git a/tests/genericxml2xmltest.c b/tests/genericxml2xmltest.c
+index 0377a05e9c..4ced5c349c 100644
+--- a/tests/genericxml2xmltest.c
++++ b/tests/genericxml2xmltest.c
+@@ -130,6 +130,16 @@ mymain(void)
+     DO_TEST_FULL("chardev-reconnect-invalid-mode", 0, false,
+                  TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE);
+ 
++    DO_TEST("cachetune");
++    DO_TEST("cachetune-small");
++    DO_TEST("cachetune-cdp");
++    DO_TEST_FULL("cachetune-colliding-allocs", false, true,
++                 TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE);
++    DO_TEST_FULL("cachetune-colliding-tunes", false, true,
++                 TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE);
++    DO_TEST_FULL("cachetune-colliding-types", false, true,
++                 TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE);
++
+     virObjectUnref(caps);
+     virObjectUnref(xmlopt);
+ 
+-- 
+2.16.1
+

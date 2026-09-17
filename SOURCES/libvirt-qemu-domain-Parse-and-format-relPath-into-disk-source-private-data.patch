@@ -1,0 +1,32 @@
+From c6ff8d075d0fd4b2819d1c4858ad2c8e8c45c051 Mon Sep 17 00:00:00 2001
+Message-Id: <c6ff8d075d0fd4b2819d1c4858ad2c8e8c45c051@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 14 Dec 2017 14:31:53 +0100
+Subject: [PATCH] qemu: domain: Parse and format relPath into disk source
+ private data
+
+Register the helpers directly to format and parse the data.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1523261
+(cherry picked from commit b3d0270c44b85944f91906225b27bca6700a6333)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 625bcb20d5..8967f2774d 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -2439,6 +2439,8 @@ virDomainXMLPrivateDataCallbacks virQEMUDriverPrivateDataCallbacks = {
+     .chrSourceNew = qemuDomainChrSourcePrivateNew,
+     .parse = qemuDomainObjPrivateXMLParse,
+     .format = qemuDomainObjPrivateXMLFormat,
++    .storageParse = virStorageSourcePrivateDataParseRelPath,
++    .storageFormat = virStorageSourcePrivateDataFormatRelPath,
+ };
+ 
+ 
+-- 
+2.15.1
+

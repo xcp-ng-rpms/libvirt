@@ -1,0 +1,75 @@
+From 5bb56c9849bdef1f7108895a20a9f348107dbfb2 Mon Sep 17 00:00:00 2001
+Message-Id: <5bb56c9849bdef1f7108895a20a9f348107dbfb2@dist-git>
+From: "Daniel P. Berrange" <berrange@redhat.com>
+Date: Wed, 6 Dec 2017 12:11:17 -0500
+Subject: [PATCH] nwfilter: don't crash listing filters in unprivileged daemon
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1522879
+
+The unprivileged libvirtd does not support nwfilter config, by leaves the
+driver active. It is supposed to result in all APIs being an effective
+no-op, but several APIs rely on driver->nwfilters being non-NULL, or they
+will reference a NULL pointer. Rather than adding checks for NULL in many
+places, just make sure  driver->nwfilters is always initialized.
+
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
+(cherry picked from commit 7993554f70fd8d512dfde484490bcd1601b60b33)
+Signed-off-by: John Ferlan <jferlan@redhat.com>
+Reviewed-by: Daniel P. Berrange <berrange@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/nwfilter/nwfilter_driver.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/nwfilter/nwfilter_driver.c b/src/nwfilter/nwfilter_driver.c
+index 2f9a51c405..885dbcc282 100644
+--- a/src/nwfilter/nwfilter_driver.c
++++ b/src/nwfilter/nwfilter_driver.c
+@@ -189,6 +189,8 @@ nwfilterStateInitialize(bool privileged,
+     /* remember that we are going to use firewalld */
+     driver->watchingFirewallD = (sysbus != NULL);
+     driver->privileged = privileged;
++    if (!(driver->nwfilters = virNWFilterObjListNew()))
++        goto error;
+ 
+     if (!privileged)
+         return 0;
+@@ -244,9 +246,6 @@ nwfilterStateInitialize(bool privileged,
+         goto error;
+     }
+ 
+-    if (!(driver->nwfilters = virNWFilterObjListNew()))
+-        goto error;
+-
+     if (virNWFilterObjListLoadAllConfigs(driver->nwfilters, driver->configDir) < 0)
+         goto error;
+ 
+@@ -271,6 +270,7 @@ nwfilterStateInitialize(bool privileged,
+     virNWFilterIPAddrMapShutdown();
+ 
+  err_free_driverstate:
++    virNWFilterObjListFree(driver->nwfilters);
+     VIR_FREE(driver);
+ 
+     return -1;
+@@ -349,13 +349,13 @@ nwfilterStateCleanup(void)
+ 
+         nwfilterDriverRemoveDBusMatches();
+ 
+-        /* free inactive nwfilters */
+-        virNWFilterObjListFree(driver->nwfilters);
+-
+         VIR_FREE(driver->configDir);
+         nwfilterDriverUnlock();
+     }
+ 
++    /* free inactive nwfilters */
++    virNWFilterObjListFree(driver->nwfilters);
++
+     virMutexDestroy(&driver->lock);
+     VIR_FREE(driver);
+ 
+-- 
+2.15.1
+

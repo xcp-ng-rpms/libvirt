@@ -1,0 +1,154 @@
+From f0e402ae3edf7717f1f2c1317f8b445ad20fdda4 Mon Sep 17 00:00:00 2001
+Message-Id: <f0e402ae3edf7717f1f2c1317f8b445ad20fdda4@dist-git>
+From: Pavel Hrdina <phrdina@redhat.com>
+Date: Tue, 5 Dec 2017 14:02:34 +0100
+Subject: [PATCH] qemu: fix security labeling for attach/detach of char devices
+
+Commit e93d844b90 was not enough to fix the permission denied
+issue.  We need to apply security labels as well.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1465833
+
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 1c57eea3625f59a80bea08d8779837a40acc4660)
+Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_hotplug.c  | 10 ++++++++
+ src/qemu/qemu_security.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/qemu/qemu_security.h |  8 +++++++
+ 3 files changed, 78 insertions(+)
+
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index 56e8a93885..eab9ad794a 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -1818,6 +1818,7 @@ int qemuDomainAttachChrDevice(virConnectPtr conn,
+     bool chardevAttached = false;
+     bool teardowncgroup = false;
+     bool teardowndevice = false;
++    bool teardownlabel = false;
+     char *tlsAlias = NULL;
+     char *secAlias = NULL;
+     bool need_release = false;
+@@ -1838,6 +1839,10 @@ int qemuDomainAttachChrDevice(virConnectPtr conn,
+         goto cleanup;
+     teardowndevice = true;
+ 
++    if (qemuSecuritySetChardevLabel(driver, vm, chr) < 0)
++        goto cleanup;
++    teardownlabel = true;
++
+     if (qemuSetupChardevCgroup(vm, chr) < 0)
+         goto cleanup;
+     teardowncgroup = true;
+@@ -1880,6 +1885,8 @@ int qemuDomainAttachChrDevice(virConnectPtr conn,
+             qemuDomainReleaseDeviceAddress(vm, &chr->info, NULL);
+         if (teardowncgroup && qemuTeardownChardevCgroup(vm, chr) < 0)
+             VIR_WARN("Unable to remove chr device cgroup ACL on hotplug fail");
++        if (teardownlabel && qemuSecurityRestoreChardevLabel(driver, vm, chr) < 0)
++            VIR_WARN("Unable to restore security label on char device");
+         if (teardowndevice && qemuDomainNamespaceTeardownChardev(driver, vm, chr) < 0)
+             VIR_WARN("Unable to remove chr device from /dev");
+     }
+@@ -4111,6 +4118,9 @@ qemuDomainRemoveChrDevice(virQEMUDriverPtr driver,
+     if (qemuTeardownChardevCgroup(vm, chr) < 0)
+         VIR_WARN("Failed to remove chr device cgroup ACL");
+ 
++    if (qemuSecurityRestoreChardevLabel(driver, vm, chr) < 0)
++        VIR_WARN("Unable to restore security label on char device");
++
+     if (qemuDomainNamespaceTeardownChardev(driver, vm, chr) < 0)
+         VIR_WARN("Unable to remove chr device from /dev");
+ 
+diff --git a/src/qemu/qemu_security.c b/src/qemu/qemu_security.c
+index e7d2bbd5a3..2aced22d2d 100644
+--- a/src/qemu/qemu_security.c
++++ b/src/qemu/qemu_security.c
+@@ -364,3 +364,63 @@ qemuSecurityRestoreInputLabel(virDomainObjPtr vm,
+     virSecurityManagerTransactionAbort(driver->securityManager);
+     return ret;
+ }
++
++
++int
++qemuSecuritySetChardevLabel(virQEMUDriverPtr driver,
++                            virDomainObjPtr vm,
++                            virDomainChrDefPtr chr)
++{
++    int ret = -1;
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionStart(driver->securityManager) < 0)
++        goto cleanup;
++
++    if (virSecurityManagerSetChardevLabel(driver->securityManager,
++                                          vm->def,
++                                          chr->source,
++                                          priv->chardevStdioLogd) < 0)
++        goto cleanup;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionCommit(driver->securityManager,
++                                            vm->pid) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virSecurityManagerTransactionAbort(driver->securityManager);
++    return ret;
++}
++
++
++int
++qemuSecurityRestoreChardevLabel(virQEMUDriverPtr driver,
++                                virDomainObjPtr vm,
++                                virDomainChrDefPtr chr)
++{
++    int ret = -1;
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionStart(driver->securityManager) < 0)
++        goto cleanup;
++
++    if (virSecurityManagerRestoreChardevLabel(driver->securityManager,
++                                              vm->def,
++                                              chr->source,
++                                              priv->chardevStdioLogd) < 0)
++        goto cleanup;
++
++    if (qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT) &&
++        virSecurityManagerTransactionCommit(driver->securityManager,
++                                            vm->pid) < 0)
++        goto cleanup;
++
++    ret = 0;
++ cleanup:
++    virSecurityManagerTransactionAbort(driver->securityManager);
++    return ret;
++}
+diff --git a/src/qemu/qemu_security.h b/src/qemu/qemu_security.h
+index 76d63f06ec..d54ce6fead 100644
+--- a/src/qemu/qemu_security.h
++++ b/src/qemu/qemu_security.h
+@@ -76,6 +76,14 @@ int qemuSecuritySetInputLabel(virDomainObjPtr vm,
+ int qemuSecurityRestoreInputLabel(virDomainObjPtr vm,
+                                   virDomainInputDefPtr input);
+ 
++int qemuSecuritySetChardevLabel(virQEMUDriverPtr driver,
++                                virDomainObjPtr vm,
++                                virDomainChrDefPtr chr);
++
++int qemuSecurityRestoreChardevLabel(virQEMUDriverPtr driver,
++                                    virDomainObjPtr vm,
++                                    virDomainChrDefPtr chr);
++
+ /* Please note that for these APIs there is no wrapper yet. Do NOT blindly add
+  * new APIs here. If an API can touch a /dev file add a proper wrapper instead.
+  */
+-- 
+2.15.1
+

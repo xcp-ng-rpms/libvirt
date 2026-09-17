@@ -1,0 +1,47 @@
+From 91bf4656fec73b8a083d7dae0a98490196f6dcbe Mon Sep 17 00:00:00 2001
+Message-Id: <91bf4656fec73b8a083d7dae0a98490196f6dcbe@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 16 Mar 2018 12:33:12 +0100
+Subject: [PATCH] virDomainDeviceDefValidateAliasesIterator: Ignore some
+ hostdevs
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1556828
+
+When defining a domain that has <interface type='hostdev'/> our
+parser creates two entries in virDomainDef: one for <interface/>
+and one for <hostdev/>. However, some info is shared between the
+two which makes user alias validation fail because alias belongs
+to the set of shared info.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Jiri Denemark <jdenemar@redhat.com>
+(cherry picked from commit 630c6e34957666f20a66167c7a512e65fc711aa0)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1558655
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index a0c0702a6c..031d4b8e55 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -5571,6 +5571,13 @@ virDomainDeviceDefValidateAliasesIterator(virDomainDefPtr def,
+         virDomainChrEquals(def->serials[0], dev->data.chr))
+         return 0;
+ 
++    if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
++        dev->data.hostdev->parent.type == VIR_DOMAIN_DEVICE_NET) {
++        /* This hostdev is a copy of some previous interface.
++         * Aliases are duplicated. */
++        return 0;
++    }
++
+     if (virHashLookup(data->aliases, alias)) {
+         virReportError(VIR_ERR_XML_ERROR,
+                        _("non unique alias detected: %s"),
+-- 
+2.16.2
+

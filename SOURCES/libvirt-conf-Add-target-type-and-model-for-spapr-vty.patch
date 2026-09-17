@@ -1,0 +1,1042 @@
+From fd981b46a6729b5d5dac4923b860f888b0c193b9 Mon Sep 17 00:00:00 2001
+Message-Id: <fd981b46a6729b5d5dac4923b860f888b0c193b9@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:12 +0100
+Subject: [PATCH] conf: Add target type and model for spapr-vty
+
+We can finally introduce a specific target model for the spapr-vty
+device used by pSeries guests, which means isa-serial will no longer
+show up to confuse users.
+
+We make sure migration works in both directions by interpreting the
+isa-serial target type, or the lack of target type, appropriately
+when parsing the guest XML, and skipping the newly-introduced type
+when formatting if for migration. We also verify that spapr-vty is
+not used for non-pSeries guests and add a bunch of test cases.
+
+This commit is best viewed with 'git show -w'.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit c498a8921e447715189c8c6d22b7ca24cc810830)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ docs/formatdomain.html.in                          | 13 ++--
+ docs/schemas/domaincommon.rng                      |  2 +
+ src/conf/domain_conf.c                             |  6 +-
+ src/conf/domain_conf.h                             |  2 +
+ src/qemu/qemu_command.c                            | 67 +++++++++------------
+ src/qemu/qemu_domain.c                             | 69 ++++++++++++++++++----
+ src/qemu/qemu_domain_address.c                     |  1 +
+ .../qemuxml2argv-pseries-basic.args                |  2 +-
+ .../qemuxml2argv-pseries-console-native.args       |  1 +
+ .../qemuxml2argv-pseries-console-native.xml        | 17 ++++++
+ .../qemuxml2argv-pseries-console-virtio.args       | 23 ++++++++
+ .../qemuxml2argv-pseries-console-virtio.xml        | 19 ++++++
+ .../qemuxml2argv-pseries-cpu-compat-power9.args    |  2 +-
+ .../qemuxml2argv-pseries-cpu-compat.args           |  2 +-
+ .../qemuxml2argv-pseries-cpu-exact.args            |  2 +-
+ .../qemuxml2argv-pseries-cpu-le.args               |  2 +-
+ .../qemuxml2argv-pseries-panic-missing.args        |  2 +-
+ .../qemuxml2argv-pseries-panic-no-address.args     |  2 +-
+ ...qemuxml2argv-pseries-serial+console-native.args |  1 +
+ .../qemuxml2argv-pseries-serial+console-native.xml | 18 ++++++
+ .../qemuxml2argv-pseries-serial-compat.args        |  1 +
+ .../qemuxml2argv-pseries-serial-compat.xml         | 19 ++++++
+ ...qemuxml2argv-pseries-serial-invalid-machine.xml | 19 ++++++
+ .../qemuxml2argv-pseries-serial-native.args        | 22 +++++++
+ .../qemuxml2argv-pseries-serial-native.xml         | 16 +++++
+ .../qemuxml2argv-pseries-usb-default.args          |  2 +-
+ .../qemuxml2argv-pseries-usb-kbd.args              |  2 +-
+ .../qemuxml2argv-pseries-usb-multi.args            |  2 +-
+ .../qemuxml2argv-pseries-vio-user-assigned.args    |  4 +-
+ .../qemuxml2argvdata/qemuxml2argv-pseries-vio.args |  4 +-
+ tests/qemuxml2argvtest.c                           | 16 +++++
+ .../qemuxml2xmlout-panic-pseries.xml               |  4 +-
+ .../qemuxml2xmlout-pseries-console-native.xml      |  1 +
+ .../qemuxml2xmlout-pseries-console-virtio.xml      | 31 ++++++++++
+ .../qemuxml2xmlout-pseries-cpu-compat-power9.xml   |  4 +-
+ .../qemuxml2xmlout-pseries-cpu-compat.xml          |  4 +-
+ .../qemuxml2xmlout-pseries-cpu-exact.xml           |  4 +-
+ .../qemuxml2xmlout-pseries-panic-missing.xml       |  4 +-
+ .../qemuxml2xmlout-pseries-panic-no-address.xml    |  4 +-
+ ...emuxml2xmlout-pseries-serial+console-native.xml |  1 +
+ .../qemuxml2xmlout-pseries-serial-compat.xml       |  1 +
+ .../qemuxml2xmlout-pseries-serial-native.xml       | 35 +++++++++++
+ tests/qemuxml2xmltest.c                            | 15 +++++
+ 43 files changed, 386 insertions(+), 82 deletions(-)
+ create mode 120000 tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.xml
+ create mode 120000 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.xml
+ create mode 120000 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-invalid-machine.xml
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.args
+ create mode 100644 tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.xml
+ create mode 120000 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-native.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-virtio.xml
+ create mode 120000 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial+console-native.xml
+ create mode 120000 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-compat.xml
+ create mode 100644 tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-native.xml
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index cf1167b9c6..0634f3396a 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -6462,7 +6462,9 @@ qemu-kvm -net nic,model=? /dev/null
+       <span class="since">since 1.0.2</span>, <code>isa-serial</code> (usable
+       with x86 guests), <code>usb-serial</code> (usable whenever USB support
+       is available) and <code>pci-serial</code> (usable whenever PCI support
+-      is available).
++      is available); <span class="since">since 3.10.0</span>,
++      <code>spapr-vio-serial</code> (usable with ppc64/pseries guests)
++      is available as well.
+     </p>
+ 
+     <p>
+@@ -6472,7 +6474,9 @@ qemu-kvm -net nic,model=? /dev/null
+       <code>isa-serial</code> (usable with the <code>isa-serial</code> target
+       type); <code>usb-serial</code> (usable with the <code>usb-serial</code>
+       target type); <code>pci-serial</code>
+-      (usable with the <code>pci-serial</code> target type).
++      (usable with the <code>pci-serial</code> target type);
++      <code>spapr-vty</code> (usable with the <code>spapr-vio-serial</code>
++      target type).
+     </p>
+ 
+     <p>
+@@ -6484,8 +6488,9 @@ qemu-kvm -net nic,model=? /dev/null
+       All of the target types support configuring the guest-visible device
+       address as <a href="#elementsAddress">documented above</a>; more
+       specifically, acceptable address types are <code>isa</code> (for
+-      <code>isa-serial</code>), <code>usb</code> (for <code>usb-serial</code>)
+-      and <code>pci</code> (for <code>pci-serial</code>).
++      <code>isa-serial</code>), <code>usb</code> (for <code>usb-serial</code>),
++      <code>pci</code> (for <code>pci-serial</code>) and <code>spapr-vio</code>
++      (for <code>spapr-vio-serial</code>).
+     </p>
+ 
+     <p>
+diff --git a/docs/schemas/domaincommon.rng b/docs/schemas/domaincommon.rng
+index 3630e539e6..027d9ae7a1 100644
+--- a/docs/schemas/domaincommon.rng
++++ b/docs/schemas/domaincommon.rng
+@@ -3571,6 +3571,7 @@
+         <value>isa-serial</value>
+         <value>usb-serial</value>
+         <value>pci-serial</value>
++        <value>spapr-vio-serial</value>
+       </choice>
+     </attribute>
+   </define>
+@@ -3582,6 +3583,7 @@
+           <value>isa-serial</value>
+           <value>usb-serial</value>
+           <value>pci-serial</value>
++          <value>spapr-vty</value>
+         </choice>
+       </attribute>
+     </element>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 692b9d9414..97c7a66b5b 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -444,7 +444,9 @@ VIR_ENUM_IMPL(virDomainChrSerialTarget,
+               "none",
+               "isa-serial",
+               "usb-serial",
+-              "pci-serial")
++              "pci-serial",
++              "spapr-vio-serial",
++);
+ 
+ VIR_ENUM_IMPL(virDomainChrChannelTarget,
+               VIR_DOMAIN_CHR_CHANNEL_TARGET_TYPE_LAST,
+@@ -471,6 +473,7 @@ VIR_ENUM_IMPL(virDomainChrSerialTargetModel,
+               "isa-serial",
+               "usb-serial",
+               "pci-serial",
++              "spapr-vty",
+ );
+ 
+ VIR_ENUM_IMPL(virDomainChrDevice, VIR_DOMAIN_CHR_DEVICE_TYPE_LAST,
+@@ -4059,6 +4062,7 @@ virDomainDefAddConsoleCompat(virDomainDefPtr def)
+ 
+         switch ((virDomainChrSerialTargetType) def->serials[0]->targetType) {
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE: {
+ 
+             /* Create a stub console to match the serial port.
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 9dfe9388cd..979e8cca00 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1077,6 +1077,7 @@ typedef enum {
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO,
+ 
+     VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST
+ } virDomainChrSerialTargetType;
+@@ -1109,6 +1110,7 @@ typedef enum {
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL,
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL,
++    VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY,
+ 
+     VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST
+ } virDomainChrSerialTargetModel;
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index f8d5d317cd..91083dc73d 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -9227,6 +9227,8 @@ qemuChrSerialTargetModelToCaps(virDomainChrSerialTargetModel targetModel)
+         return QEMU_CAPS_DEVICE_USB_SERIAL;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+         return QEMU_CAPS_DEVICE_PCI_SERIAL;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
++        return QEMU_CAPS_DEVICE_SPAPR_VTY;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+@@ -10354,52 +10356,39 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+     virBuffer cmd = VIR_BUFFER_INITIALIZER;
+     virQEMUCapsFlags caps;
+ 
+-    if (qemuDomainIsPSeries(def)) {
+-        if (serial->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
+-            serial->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO) {
+-            if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_SPAPR_VTY)) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+-                               _("spapr-vty not supported in this QEMU binary"));
+-                goto error;
+-            }
++    switch ((virDomainChrSerialTargetModel) serial->targetModel) {
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
+ 
+-            virBufferAsprintf(&cmd, "spapr-vty,chardev=char%s",
+-                              serial->info.alias);
+-        }
+-    } else {
+-        switch ((virDomainChrSerialTargetModel) serial->targetModel) {
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
++        caps = qemuChrSerialTargetModelToCaps(serial->targetModel);
+ 
+-            caps = qemuChrSerialTargetModelToCaps(serial->targetModel);
+-
+-            if (caps && !virQEMUCapsGet(qemuCaps, caps)) {
+-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+-                               _("'%s' is not supported in this QEMU binary"),
+-                               virDomainChrSerialTargetModelTypeToString(serial->targetModel));
+-                goto error;
+-            }
+-            break;
+-
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+-            break;
+-
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+-            /* Except from _LAST, which is just a guard value and will never
+-             * be used, all of the above are platform devices, which means
+-             * qemuBuildSerialCommandLine() will have taken the appropriate
+-             * branch and we will not have ended up here. */
+-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                           _("Invalid target model for serial device"));
++        if (caps && !virQEMUCapsGet(qemuCaps, caps)) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                           _("'%s' is not supported in this QEMU binary"),
++                           virDomainChrSerialTargetModelTypeToString(serial->targetModel));
+             goto error;
+         }
++        break;
+ 
+-        virBufferAsprintf(&cmd, "%s,chardev=char%s,id=%s",
+-                          virDomainChrSerialTargetModelTypeToString(serial->targetModel),
+-                          serial->info.alias, serial->info.alias);
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
++        break;
++
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
++        /* Except from _LAST, which is just a guard value and will never
++         * be used, all of the above are platform devices, which means
++         * qemuBuildSerialCommandLine() will have taken the appropriate
++         * branch and we will not have ended up here. */
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("Invalid target model for serial device"));
++        goto error;
+     }
+ 
++    virBufferAsprintf(&cmd, "%s,chardev=char%s,id=%s",
++                      virDomainChrSerialTargetModelTypeToString(serial->targetModel),
++                      serial->info.alias, serial->info.alias);
++
+     if (qemuBuildDeviceAddressStr(&cmd, def, &serial->info, qemuCaps) < 0)
+         goto error;
+ 
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 7b5bc97de6..17c898896d 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -3466,6 +3466,8 @@ qemuDomainChrSerialTargetTypeToAddressType(int targetType)
+         return VIR_DOMAIN_DEVICE_ADDRESS_TYPE_USB;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
+         return VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
++        return VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         break;
+@@ -3485,6 +3487,8 @@ qemuDomainChrSerialTargetModelToTargetType(int targetModel)
+         return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+         return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI;
++    case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
++        return VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO;
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
+     case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+         break;
+@@ -3495,8 +3499,7 @@ qemuDomainChrSerialTargetModelToTargetType(int targetModel)
+ 
+ 
+ static int
+-qemuDomainChrTargetDefValidate(const virDomainDef *def,
+-                               const virDomainChrDef *chr)
++qemuDomainChrTargetDefValidate(const virDomainChrDef *chr)
+ {
+     int expected;
+ 
+@@ -3508,11 +3511,7 @@ qemuDomainChrTargetDefValidate(const virDomainDef *def,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
+-
+-            /* Hack required until we have a proper type for pSeries
+-             * serial consoles */
+-            if (qemuDomainIsPSeries(def))
+-                return 0;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+ 
+             expected = qemuDomainChrSerialTargetTypeToAddressType(chr->targetType);
+ 
+@@ -3536,6 +3535,7 @@ qemuDomainChrTargetDefValidate(const virDomainDef *def,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY:
+ 
+             expected = qemuDomainChrSerialTargetModelToTargetType(chr->targetModel);
+ 
+@@ -3573,7 +3573,7 @@ qemuDomainChrDefValidate(const virDomainChrDef *dev,
+     if (qemuDomainChrSourceDefValidate(dev->source) < 0)
+         return -1;
+ 
+-    if (qemuDomainChrTargetDefValidate(def, dev) < 0)
++    if (qemuDomainChrTargetDefValidate(dev) < 0)
+         return -1;
+ 
+     if (dev->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_PARALLEL &&
+@@ -3583,6 +3583,26 @@ qemuDomainChrDefValidate(const virDomainChrDef *dev,
+             return -1;
+     }
+ 
++    if (dev->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL) {
++        bool isCompatible = true;
++
++        if (!qemuDomainIsPSeries(def) &&
++            (dev->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO ||
++             dev->targetModel == VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY)) {
++            isCompatible = false;
++        }
++
++        if (!isCompatible) {
++            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
++                           _("Serial device with target type '%s' and "
++                             "target model '%s' not compatible with guest "
++                             "architecture or machine type"),
++                           virDomainChrSerialTargetTypeToString(dev->targetType),
++                           virDomainChrSerialTargetModelTypeToString(dev->targetModel));
++            return -1;
++        }
++    }
++
+     return 0;
+ }
+ 
+@@ -4222,10 +4242,7 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+         if (ARCH_IS_X86(def->os.arch)) {
+             chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
+         } else if (qemuDomainIsPSeries(def)) {
+-            /* Setting TYPE_ISA here is just a temporary hack to reduce test
+-             * suite churn. Later on we will have a proper serial type for
+-             * pSeries and this line will be updated accordingly. */
+-            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
++            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO;
+         }
+     }
+ 
+@@ -4242,6 +4259,9 @@ qemuDomainChrDefPostParse(virDomainChrDefPtr chr,
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
+             chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL;
+             break;
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
++            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY;
++            break;
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             /* Nothing to do */
+@@ -5147,6 +5167,31 @@ qemuDomainDefFormatBufInternal(virQEMUDriverPtr driver,
+                 goto cleanup;
+         }
+ 
++        for (i = 0; i < def->nserials; i++) {
++            virDomainChrDefPtr serial = def->serials[i];
++
++            /* Historically, the native console type for some machine types
++             * was not set at all, which means it defaulted to ISA even
++             * though that was not even remotely accurate. To ensure migration
++             * towards older libvirt versions works for such guests, we switch
++             * it back to the default here */
++            if (flags & VIR_DOMAIN_XML_MIGRATABLE) {
++                switch ((virDomainChrSerialTargetType) serial->targetType) {
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
++                    serial->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
++                    serial->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE;
++                    break;
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
++                case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
++                    /* Nothing to do */
++                    break;
++                }
++            }
++        }
++
+         /* Replace the CPU definition updated according to QEMU with the one
+          * used for starting the domain. The updated def will be sent
+          * separately for backward compatibility.
+diff --git a/src/qemu/qemu_domain_address.c b/src/qemu/qemu_domain_address.c
+index 989c0e6c93..2319e503eb 100644
+--- a/src/qemu/qemu_domain_address.c
++++ b/src/qemu/qemu_domain_address.c
+@@ -782,6 +782,7 @@ qemuDomainDeviceCalculatePCIConnectFlags(virDomainDeviceDefPtr dev,
+ 
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+         case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
+             return 0;
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-basic.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-basic.args
+index 97a7057ba0..789d9f679e 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-basic.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-basic.args
+@@ -20,4 +20,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.args
+new file mode 120000
+index 0000000000..d6c830ecdf
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.args
+@@ -0,0 +1 @@
++qemuxml2argv-pseries-serial-native.args
+\ No newline at end of file
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.xml
+new file mode 100644
+index 0000000000..9f37bf0dec
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-native.xml
+@@ -0,0 +1,17 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- The <console> element being present should result in a matching
++         <serial> element being created -->
++    <console type='pty'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.args
+new file mode 100644
+index 0000000000..343018fb3e
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.args
+@@ -0,0 +1,23 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-ppc64 \
++-name guest \
++-S \
++-M pseries \
++-m 512 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid 1ccfd97d-5eb4-478a-bbe6-88d254c16db7 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-guest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-device virtio-serial-pci,id=virtio-serial0,bus=pci.0,addr=0x1 \
++-chardev pty,id=charconsole0 \
++-device virtconsole,chardev=charconsole0,id=console0
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.xml
+new file mode 100644
+index 0000000000..0190ab63ac
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-console-virtio.xml
+@@ -0,0 +1,19 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- The <console> element being present should *not* result in a
++         matching <serial> element being created -->
++    <console type='pty'>
++      <target type='virtio'/>
++    </console>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat-power9.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat-power9.args
+index af93d63dc9..9bb375aeba 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat-power9.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat-power9.args
+@@ -21,4 +21,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat.args
+index 7740e2f5a9..5174aa760e 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-compat.args
+@@ -21,4 +21,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-exact.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-exact.args
+index d2c99a7fa3..3790deca8c 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-exact.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-exact.args
+@@ -21,4 +21,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-le.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-le.args
+index 97a7057ba0..789d9f679e 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-le.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-cpu-le.args
+@@ -20,4 +20,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-missing.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-missing.args
+index 97a7057ba0..789d9f679e 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-missing.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-missing.args
+@@ -20,4 +20,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-no-address.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-no-address.args
+index 97a7057ba0..789d9f679e 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-no-address.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-panic-no-address.args
+@@ -20,4 +20,4 @@ server,nowait \
+ -boot c \
+ -usb \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.args
+new file mode 120000
+index 0000000000..d6c830ecdf
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.args
+@@ -0,0 +1 @@
++qemuxml2argv-pseries-serial-native.args
+\ No newline at end of file
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.xml
+new file mode 100644
+index 0000000000..2733baa980
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial+console-native.xml
+@@ -0,0 +1,18 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- When both the <serial> and <console> elements are present, they will
++         be matched and end up representing the same native serial console -->
++    <serial type='pty'/>
++    <console type='pty'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.args
+new file mode 120000
+index 0000000000..d6c830ecdf
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.args
+@@ -0,0 +1 @@
++qemuxml2argv-pseries-serial-native.args
+\ No newline at end of file
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.xml
+new file mode 100644
+index 0000000000..2e182edbd0
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-compat.xml
+@@ -0,0 +1,19 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- isa-serial has to be accepted for backwards compatibility reasons,
++         but should get converted to the proper type (spapr-vty-serial) -->
++    <serial type='pty'>
++      <target type='isa-serial'/>
++    </serial>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-invalid-machine.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-invalid-machine.xml
+new file mode 100644
+index 0000000000..5482146a57
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-invalid-machine.xml
+@@ -0,0 +1,19 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='x86_64' machine='pc'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-x86_64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- The spapr-vio-serial target type can only be used for pSeries
++         guests, so this should be rejected -->
++    <serial type='pty'>
++      <target type='spapr-vio-serial'/>
++    </serial>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.args
+new file mode 100644
+index 0000000000..f72b8b6259
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.args
+@@ -0,0 +1,22 @@
++LC_ALL=C \
++PATH=/bin \
++HOME=/home/test \
++USER=test \
++LOGNAME=test \
++QEMU_AUDIO_DRV=none \
++/usr/bin/qemu-system-ppc64 \
++-name guest \
++-S \
++-M pseries \
++-m 512 \
++-smp 1,sockets=1,cores=1,threads=1 \
++-uuid 1ccfd97d-5eb4-478a-bbe6-88d254c16db7 \
++-nographic \
++-nodefconfig \
++-nodefaults \
++-chardev socket,id=charmonitor,path=/tmp/lib/domain--1-guest/monitor.sock,\
++server,nowait \
++-mon chardev=charmonitor,id=monitor,mode=readline \
++-boot c \
++-chardev pty,id=charserial0 \
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.xml b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.xml
+new file mode 100644
+index 0000000000..6cec4bc9d3
+--- /dev/null
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-serial-native.xml
+@@ -0,0 +1,16 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++  </os>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' model='none'/>
++    <!-- This will use the spapr-vty-serial target type -->
++    <serial type='pty'/>
++    <memballoon model='none'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-default.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-default.args
+index a92b1e01b1..37c0594032 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-default.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-default.args
+@@ -20,4 +20,4 @@ server,nowait \
+ -boot c \
+ -device pci-ohci,id=usb,bus=pci.0,addr=0x1 \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-kbd.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-kbd.args
+index caaccdbb8e..838b80453a 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-kbd.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-kbd.args
+@@ -20,5 +20,5 @@ server,nowait \
+ -boot c \
+ -device pci-ohci,id=usb,bus=pci.0,addr=0x1 \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000 \
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000 \
+ -device usb-kbd,id=input0,bus=usb.0,port=1
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-multi.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-multi.args
+index b9bd905a5d..56bc1d67ef 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-multi.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-usb-multi.args
+@@ -21,4 +21,4 @@ server,nowait \
+ -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1 \
+ -device pci-ohci,id=usb1,bus=pci.0,addr=0x2 \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio-user-assigned.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio-user-assigned.args
+index 63cf3c1830..0fcfbe3796 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio-user-assigned.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio-user-assigned.args
+@@ -25,6 +25,6 @@ server,nowait \
+ -device scsi-disk,bus=scsi1.0,channel=0,scsi-id=0,lun=0,\
+ drive=drive-scsi1-0-0-0,id=scsi1-0-0-0 \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x20000000 \
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x20000000 \
+ -chardev pty,id=charserial1 \
+--device spapr-vty,chardev=charserial1,reg=0x30001000
++-device spapr-vty,chardev=charserial1,id=serial1,reg=0x30001000
+diff --git a/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio.args b/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio.args
+index 0294067bc8..8a9bdcc4cd 100644
+--- a/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio.args
++++ b/tests/qemuxml2argvdata/qemuxml2argv-pseries-vio.args
+@@ -25,6 +25,6 @@ server,nowait \
+ -device scsi-disk,bus=scsi1.0,channel=0,scsi-id=0,lun=0,\
+ drive=drive-scsi1-0-0-0,id=scsi1-0-0-0 \
+ -chardev pty,id=charserial0 \
+--device spapr-vty,chardev=charserial0,reg=0x30000000 \
++-device spapr-vty,chardev=charserial0,id=serial0,reg=0x30000000 \
+ -chardev pty,id=charserial1 \
+--device spapr-vty,chardev=charserial1,reg=0x30001000
++-device spapr-vty,chardev=charserial1,id=serial1,reg=0x30001000
+diff --git a/tests/qemuxml2argvtest.c b/tests/qemuxml2argvtest.c
+index 747ad24663..4b63dd141d 100644
+--- a/tests/qemuxml2argvtest.c
++++ b/tests/qemuxml2argvtest.c
+@@ -1875,6 +1875,22 @@ mymain(void)
+                         QEMU_CAPS_MACHINE_OPT,
+                         QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
+ 
++    DO_TEST("pseries-serial-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial+console-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial-compat",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-console-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-console-virtio",
++            QEMU_CAPS_NODEFCONFIG);
++    DO_TEST_PARSE_ERROR("pseries-serial-invalid-machine", NONE);
++
+     DO_TEST("disk-ide-drive-split",
+             QEMU_CAPS_NODEFCONFIG,
+             QEMU_CAPS_IDE_CD);
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
+index 496df0696c..484fe4cfa6 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-panic-pseries.xml
+@@ -22,8 +22,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-native.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-native.xml
+new file mode 120000
+index 0000000000..b0e645fc03
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-native.xml
+@@ -0,0 +1 @@
++qemuxml2xmlout-pseries-serial-native.xml
+\ No newline at end of file
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-virtio.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-virtio.xml
+new file mode 100644
+index 0000000000..48760f2824
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-console-virtio.xml
+@@ -0,0 +1,31 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <currentMemory unit='KiB'>524288</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' index='0' model='none'/>
++    <controller type='pci' index='0' model='pci-root'>
++      <model name='spapr-pci-host-bridge'/>
++      <target index='0'/>
++    </controller>
++    <controller type='virtio-serial' index='0'>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x0'/>
++    </controller>
++    <console type='pty'>
++      <target type='virtio' port='0'/>
++    </console>
++    <memballoon model='none'/>
++    <panic model='pseries'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
+index 9d4c5efe67..404bb0c768 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat-power9.xml
+@@ -25,8 +25,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
+index 6059859abd..1891fa5f48 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-compat.xml
+@@ -25,8 +25,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
+index f3216523ed..f08f3e005f 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-cpu-exact.xml
+@@ -26,8 +26,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
+index 496df0696c..484fe4cfa6 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-missing.xml
+@@ -22,8 +22,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
+index 496df0696c..484fe4cfa6 100644
+--- a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-panic-no-address.xml
+@@ -22,8 +22,8 @@
+       <target index='0'/>
+     </controller>
+     <serial type='pty'>
+-      <target type='isa-serial' port='0'>
+-        <model name='isa-serial'/>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
+       </target>
+       <address type='spapr-vio' reg='0x30000000'/>
+     </serial>
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial+console-native.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial+console-native.xml
+new file mode 120000
+index 0000000000..b0e645fc03
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial+console-native.xml
+@@ -0,0 +1 @@
++qemuxml2xmlout-pseries-serial-native.xml
+\ No newline at end of file
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-compat.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-compat.xml
+new file mode 120000
+index 0000000000..b0e645fc03
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-compat.xml
+@@ -0,0 +1 @@
++qemuxml2xmlout-pseries-serial-native.xml
+\ No newline at end of file
+diff --git a/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-native.xml b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-native.xml
+new file mode 100644
+index 0000000000..fae7c54d5b
+--- /dev/null
++++ b/tests/qemuxml2xmloutdata/qemuxml2xmlout-pseries-serial-native.xml
+@@ -0,0 +1,35 @@
++<domain type='qemu'>
++  <name>guest</name>
++  <uuid>1ccfd97d-5eb4-478a-bbe6-88d254c16db7</uuid>
++  <memory unit='KiB'>524288</memory>
++  <currentMemory unit='KiB'>524288</currentMemory>
++  <vcpu placement='static'>1</vcpu>
++  <os>
++    <type arch='ppc64' machine='pseries'>hvm</type>
++    <boot dev='hd'/>
++  </os>
++  <clock offset='utc'/>
++  <on_poweroff>destroy</on_poweroff>
++  <on_reboot>restart</on_reboot>
++  <on_crash>destroy</on_crash>
++  <devices>
++    <emulator>/usr/bin/qemu-system-ppc64</emulator>
++    <controller type='usb' index='0' model='none'/>
++    <controller type='pci' index='0' model='pci-root'>
++      <model name='spapr-pci-host-bridge'/>
++      <target index='0'/>
++    </controller>
++    <serial type='pty'>
++      <target type='spapr-vio-serial' port='0'>
++        <model name='spapr-vty'/>
++      </target>
++      <address type='spapr-vio' reg='0x30000000'/>
++    </serial>
++    <console type='pty'>
++      <target type='serial' port='0'/>
++      <address type='spapr-vio' reg='0x30000000'/>
++    </console>
++    <memballoon model='none'/>
++    <panic model='pseries'/>
++  </devices>
++</domain>
+diff --git a/tests/qemuxml2xmltest.c b/tests/qemuxml2xmltest.c
+index 6687997900..ad429ead4d 100644
+--- a/tests/qemuxml2xmltest.c
++++ b/tests/qemuxml2xmltest.c
+@@ -766,6 +766,21 @@ mymain(void)
+             QEMU_CAPS_MACHINE_OPT,
+             QEMU_CAPS_MACHINE_PSERIES_RESIZE_HPT);
+ 
++    DO_TEST("pseries-serial-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial+console-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-serial-compat",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-console-native",
++            QEMU_CAPS_NODEFCONFIG,
++            QEMU_CAPS_DEVICE_SPAPR_VTY);
++    DO_TEST("pseries-console-virtio",
++            QEMU_CAPS_NODEFCONFIG);
++
+     DO_TEST("balloon-device-auto", NONE);
+     DO_TEST("balloon-device-period", NONE);
+     DO_TEST("channel-virtio-auto", NONE);
+-- 
+2.15.1
+

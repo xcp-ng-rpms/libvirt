@@ -1,0 +1,52 @@
+From 3dcba116fd4e0a6df50b905b021151b30ef55714 Mon Sep 17 00:00:00 2001
+Message-Id: <3dcba116fd4e0a6df50b905b021151b30ef55714@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 1 Dec 2017 15:57:01 +0100
+Subject: [PATCH] qemu: domain: Refactor control flow in
+ qemuDomainDetermineDiskChain
+
+Split out clearing of the backing chain prior to other code since it
+will be required later and optimize few layers of nested conditions and
+loops.
+
+(cherry picked from commit b19710b9b6039728620a8d557a322ef139529226)
+
+ Conflicts:
+	src/qemu/qemu_domain.c:
+        a92c4f7537577f1443ddd6fef4e0dfcb054e5f08 was not backported thus
+        the code skipping to the end of the backing chain is missing
+
+        This patch only moves the block that clears the backing store
+        earlier so that the rest of the patches will apply
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1509110
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_domain.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/src/qemu/qemu_domain.c b/src/qemu/qemu_domain.c
+index 1b5f439621..13d120040b 100644
+--- a/src/qemu/qemu_domain.c
++++ b/src/qemu/qemu_domain.c
+@@ -6355,12 +6355,11 @@ qemuDomainDetermineDiskChain(virQEMUDriverPtr driver,
+     if (virStorageSourceIsEmpty(disk->src))
+         goto cleanup;
+ 
+-    if (virStorageSourceHasBacking(disk->src)) {
+-        if (force_probe)
+-            virStorageSourceBackingStoreClear(disk->src);
+-        else
+-            goto cleanup;
+-    }
++    if (force_probe)
++        virStorageSourceBackingStoreClear(disk->src);
++
++    if (virStorageSourceHasBacking(disk->src))
++        goto cleanup;
+ 
+     qemuDomainGetImageIds(cfg, vm, disk->src, &uid, &gid);
+ 
+-- 
+2.15.1
+

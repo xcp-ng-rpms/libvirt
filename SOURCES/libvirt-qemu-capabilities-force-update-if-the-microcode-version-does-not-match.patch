@@ -1,0 +1,579 @@
+From 94ea163b2853d51a3037e8f8ee664058ae7c541d Mon Sep 17 00:00:00 2001
+Message-Id: <94ea163b2853d51a3037e8f8ee664058ae7c541d@dist-git>
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 12 Dec 2017 16:23:41 +0100
+Subject: [PATCH] qemu: capabilities: force update if the microcode version
+ does not match
+
+A microcode update can cause the CPUID bits to change; an example
+from the past was the update that disabled TSX on several Haswell
+and Broadwell machines.
+
+Therefore, place microcode version in the virQEMUCaps struct and
+XML, and rebuild the cache if the versions do not match.
+
+CVE-2017-5715
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+
+Conflicts:
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv2.aarch64.xml
+	tests/qemucapabilitiesdata/caps_2.10.0-gicv3.aarch64.xml
+            - missing in 7.5
+---
+ src/qemu/qemu_capabilities.c                       | 40 +++++++++++++++++++++-
+ src/qemu/qemu_capabilities.h                       |  6 ++--
+ src/qemu/qemu_capspriv.h                           |  5 +++
+ src/qemu/qemu_driver.c                             |  9 ++++-
+ tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml  |  1 +
+ tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml   |  1 +
+ .../caps_2.6.0-gicv2.aarch64.xml                   |  1 +
+ .../caps_2.6.0-gicv3.aarch64.xml                   |  1 +
+ tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml    |  1 +
+ tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml    |  1 +
+ tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml    |  1 +
+ tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml    |  1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml    |  1 +
+ tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml   |  1 +
+ tests/qemucapabilitiestest.c                       | 14 +++++---
+ tests/qemucapsprobe.c                              |  2 +-
+ tests/testutilsqemu.c                              |  2 +-
+ 30 files changed, 91 insertions(+), 10 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 165fdbc5ea..09323d2580 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -507,6 +507,7 @@ struct _virQEMUCaps {
+     unsigned int version;
+     unsigned int kvmVersion;
+     unsigned int libvirtVersion;
++    unsigned int microcodeVersion;
+     char *package;
+ 
+     virArch arch;
+@@ -2296,6 +2297,7 @@ virQEMUCapsPtr virQEMUCapsNewCopy(virQEMUCapsPtr qemuCaps)
+ 
+     ret->version = qemuCaps->version;
+     ret->kvmVersion = qemuCaps->kvmVersion;
++    ret->microcodeVersion = qemuCaps->microcodeVersion;
+ 
+     if (VIR_STRDUP(ret->package, qemuCaps->package) < 0)
+         goto error;
+@@ -3819,6 +3821,7 @@ struct _virQEMUCapsCachePriv {
+     uid_t runUid;
+     gid_t runGid;
+     virArch hostArch;
++    unsigned int microcodeVersion;
+ };
+ typedef struct _virQEMUCapsCachePriv virQEMUCapsCachePriv;
+ typedef virQEMUCapsCachePriv *virQEMUCapsCachePrivPtr;
+@@ -3941,6 +3944,13 @@ virQEMUCapsLoadCache(virArch hostArch,
+         goto cleanup;
+     }
+ 
++    if (virXPathUInt("string(./microcodeVersion)", ctxt,
++                     &qemuCaps->microcodeVersion) < 0) {
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("missing microcode version in QEMU capabilities cache"));
++        goto cleanup;
++    }
++
+     if (virXPathBoolean("boolean(./package)", ctxt) > 0) {
+         qemuCaps->package = virXPathString("string(./package)", ctxt);
+         if (!qemuCaps->package &&
+@@ -4219,6 +4229,9 @@ virQEMUCapsFormatCache(virQEMUCapsPtr qemuCaps)
+     virBufferAsprintf(&buf, "<kvmVersion>%d</kvmVersion>\n",
+                       qemuCaps->kvmVersion);
+ 
++    virBufferAsprintf(&buf, "<microcodeVersion>%u</microcodeVersion>\n",
++                      qemuCaps->microcodeVersion);
++
+     if (qemuCaps->package)
+         virBufferAsprintf(&buf, "<package>%s</package>\n",
+                           qemuCaps->package);
+@@ -4360,6 +4373,16 @@ virQEMUCapsIsValid(void *data,
+         return false;
+     }
+ 
++    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM) &&
++        priv->microcodeVersion != qemuCaps->microcodeVersion) {
++        VIR_DEBUG("Outdated capabilities for '%s': microcode version changed "
++                  "(%u vs %u)",
++                  qemuCaps->binary,
++                  priv->microcodeVersion,
++                  qemuCaps->microcodeVersion);
++        return false;
++    }
++
+     return true;
+ }
+ 
+@@ -5189,6 +5212,7 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
+                                 const char *libDir,
+                                 uid_t runUid,
+                                 gid_t runGid,
++                                unsigned int microcodeVersion,
+                                 bool qmpOnly)
+ {
+     virQEMUCapsPtr qemuCaps;
+@@ -5245,6 +5269,9 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
+     virQEMUCapsInitHostCPUModel(qemuCaps, hostArch, VIR_DOMAIN_VIRT_KVM);
+     virQEMUCapsInitHostCPUModel(qemuCaps, hostArch, VIR_DOMAIN_VIRT_QEMU);
+ 
++    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM))
++        qemuCaps->microcodeVersion = microcodeVersion;
++
+  cleanup:
+     VIR_FREE(qmperr);
+     return qemuCaps;
+@@ -5266,6 +5293,7 @@ virQEMUCapsNewData(const char *binary,
+                                            priv->libDir,
+                                            priv->runUid,
+                                            priv->runGid,
++                                           priv->microcodeVersion,
+                                            false);
+ }
+ 
+@@ -5348,7 +5376,8 @@ virFileCachePtr
+ virQEMUCapsCacheNew(const char *libDir,
+                     const char *cacheDir,
+                     uid_t runUid,
+-                    gid_t runGid)
++                    gid_t runGid,
++                    unsigned int microcodeVersion)
+ {
+     char *capsCacheDir = NULL;
+     virFileCachePtr cache = NULL;
+@@ -5371,6 +5400,7 @@ virQEMUCapsCacheNew(const char *libDir,
+ 
+     priv->runUid = runUid;
+     priv->runGid = runGid;
++    priv->microcodeVersion = microcodeVersion;
+ 
+  cleanup:
+     VIR_FREE(capsCacheDir);
+@@ -5848,3 +5878,11 @@ virQEMUCapsFillDomainCaps(virCapsPtr caps,
+         return -1;
+     return 0;
+ }
++
++
++void
++virQEMUCapsSetMicrocodeVersion(virQEMUCapsPtr qemuCaps,
++                               unsigned int microcodeVersion)
++{
++    qemuCaps->microcodeVersion = microcodeVersion;
++}
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index 0fb2a10a17..4b5d70fbb0 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -520,8 +520,10 @@ void virQEMUCapsFilterByMachineType(virQEMUCapsPtr qemuCaps,
+                                     const char *machineType);
+ 
+ virFileCachePtr virQEMUCapsCacheNew(const char *libDir,
+-                                        const char *cacheDir,
+-                                        uid_t uid, gid_t gid);
++                                    const char *cacheDir,
++                                    uid_t uid,
++                                    gid_t gid,
++                                    unsigned int microcodeVersion);
+ virQEMUCapsPtr virQEMUCapsCacheLookup(virFileCachePtr cache,
+                                       const char *binary);
+ virQEMUCapsPtr virQEMUCapsCacheLookupCopy(virFileCachePtr cache,
+diff --git a/src/qemu/qemu_capspriv.h b/src/qemu/qemu_capspriv.h
+index 219daa3629..98d163b920 100644
+--- a/src/qemu/qemu_capspriv.h
++++ b/src/qemu/qemu_capspriv.h
+@@ -36,6 +36,7 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
+                                 const char *libDir,
+                                 uid_t runUid,
+                                 gid_t runGid,
++                                unsigned int microcodeVersion,
+                                 bool qmpOnly);
+ 
+ int virQEMUCapsLoadCache(virArch hostArch,
+@@ -102,4 +103,8 @@ int
+ virQEMUCapsProbeQMPCPUDefinitions(virQEMUCapsPtr qemuCaps,
+                                   qemuMonitorPtr mon,
+                                   bool tcg);
++
++void
++virQEMUCapsSetMicrocodeVersion(virQEMUCapsPtr qemuCaps,
++                               unsigned int microcodeVersion);
+ #endif
+diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
+index fa73fc30d6..0bc6eaa431 100644
+--- a/src/qemu/qemu_driver.c
++++ b/src/qemu/qemu_driver.c
+@@ -633,6 +633,8 @@ qemuStateInitialize(bool privileged,
+     char *hugepagePath = NULL;
+     char *memoryBackingPath = NULL;
+     size_t i;
++    virCPUDefPtr hostCPU = NULL;
++    unsigned int microcodeVersion = 0;
+ 
+     if (VIR_ALLOC(qemu_driver) < 0)
+         return -1;
+@@ -855,10 +857,15 @@ qemuStateInitialize(bool privileged,
+         run_gid = cfg->group;
+     }
+ 
++    if ((hostCPU = virCPUProbeHost(virArchFromHost())))
++        microcodeVersion = hostCPU->microcodeVersion;
++    virCPUDefFree(hostCPU);
++
+     qemu_driver->qemuCapsCache = virQEMUCapsCacheNew(cfg->libDir,
+                                                      cfg->cacheDir,
+                                                      run_uid,
+-                                                     run_gid);
++                                                     run_gid,
++                                                     microcodeVersion);
+     if (!qemu_driver->qemuCapsCache)
+         goto error;
+ 
+diff --git a/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
+index d560811ab7..3001d487c6 100644
+--- a/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.2.2.x86_64.xml
+@@ -112,6 +112,7 @@
+   <flag name='isa-serial'/>
+   <version>1002002</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>26900</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='qemu64'/>
+diff --git a/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
+index 576475f7fa..283f30ef07 100644
+--- a/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.3.1.x86_64.xml
+@@ -130,6 +130,7 @@
+   <flag name='isa-serial'/>
+   <version>1003001</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>30198</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='qemu64'/>
+diff --git a/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
+index 0c271d3e41..200069ae86 100644
+--- a/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.4.2.x86_64.xml
+@@ -131,6 +131,7 @@
+   <flag name='isa-serial'/>
+   <version>1004002</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>30915</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
+index 5c667975bf..e02c0961cd 100644
+--- a/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.5.3.x86_64.xml
+@@ -143,6 +143,7 @@
+   <flag name='isa-serial'/>
+   <version>1005003</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>47019</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
+index 8ae07a91db..e3896685e9 100644
+--- a/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.6.0.x86_64.xml
+@@ -148,6 +148,7 @@
+   <flag name='isa-serial'/>
+   <version>1006000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>45248</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
+index 34bd6be1cd..5b4d1ea661 100644
+--- a/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_1.7.0.x86_64.xml
+@@ -150,6 +150,7 @@
+   <flag name='isa-serial'/>
+   <version>1007000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>50692</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
+index 0d7c144ff7..200e57adac 100644
+--- a/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.1.1.x86_64.xml
+@@ -166,6 +166,7 @@
+   <flag name='isa-serial'/>
+   <version>2001001</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>59488</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+index 09cce92067..d9ba077123 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.ppc64.xml
+@@ -184,6 +184,7 @@
+   <flag name='isa-serial'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>383421</microcodeVersion>
+   <package> (v2.10.0)</package>
+   <arch>ppc64</arch>
+   <cpu type='kvm' name='default'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+index 00fe1cffa7..d9cbbd8ccb 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.s390x.xml
+@@ -146,6 +146,7 @@
+   <flag name='disk-share-rw'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>304153</microcodeVersion>
+   <package></package>
+   <arch>s390x</arch>
+   <hostCPU type='kvm' model='z14-base' migratability='no'>
+diff --git a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+index 2417251678..c7b9787142 100644
+--- a/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.10.0.x86_64.xml
+@@ -229,6 +229,7 @@
+   <flag name='isa-serial'/>
+   <version>2010000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>345185</microcodeVersion>
+   <package> (v2.10.0)</package>
+   <arch>x86_64</arch>
+   <hostCPU type='kvm' model='base' migratability='yes'>
+diff --git a/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
+index 5007523c1f..9b315aecf4 100644
+--- a/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.4.0.x86_64.xml
+@@ -191,6 +191,7 @@
+   <flag name='isa-serial'/>
+   <version>2004000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>75653</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
+index a9ad292d01..3096eadf72 100644
+--- a/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.5.0.x86_64.xml
+@@ -197,6 +197,7 @@
+   <flag name='isa-serial'/>
+   <version>2005000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>216775</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+index d3e2e18faa..4cdd894a97 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv2.aarch64.xml
+@@ -176,6 +176,7 @@
+   <flag name='pl011'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>228838</microcodeVersion>
+   <package></package>
+   <arch>aarch64</arch>
+   <cpu type='kvm' name='pxa262'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+index bc86d03537..5655af7d3d 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0-gicv3.aarch64.xml
+@@ -176,6 +176,7 @@
+   <flag name='pl011'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>228838</microcodeVersion>
+   <package></package>
+   <arch>aarch64</arch>
+   <cpu type='kvm' name='pxa262'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+index 27d99bd937..31701bb40b 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0.ppc64.xml
+@@ -171,6 +171,7 @@
+   <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>263602</microcodeVersion>
+   <package></package>
+   <arch>ppc64</arch>
+   <cpu type='kvm' name='default'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
+index 97621612ab..6ae19ffd36 100644
+--- a/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.6.0.x86_64.xml
+@@ -207,6 +207,7 @@
+   <flag name='isa-serial'/>
+   <version>2006000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>227579</microcodeVersion>
+   <package></package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
+index c2f310cd46..b6ec680d5c 100644
+--- a/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.7.0.s390x.xml
+@@ -138,6 +138,7 @@
+   <flag name='sclplmconsole'/>
+   <version>2007000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>217559</microcodeVersion>
+   <package></package>
+   <arch>s390x</arch>
+   <cpu type='kvm' name='host'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
+index e4ea9452c5..294ac126e5 100644
+--- a/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.7.0.x86_64.xml
+@@ -211,6 +211,7 @@
+   <flag name='isa-serial'/>
+   <version>2007000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>239276</microcodeVersion>
+   <package> (v2.7.0)</package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='Opteron_G5'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
+index f6e024dc61..d788ad206e 100644
+--- a/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.8.0.s390x.xml
+@@ -140,6 +140,7 @@
+   <flag name='sclplmconsole'/>
+   <version>2007093</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>242460</microcodeVersion>
+   <package></package>
+   <arch>s390x</arch>
+   <hostCPU type='kvm' model='zEC12.2-base' migratability='no'>
+diff --git a/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
+index c6d3e21d5c..156563d99a 100644
+--- a/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.8.0.x86_64.xml
+@@ -213,6 +213,7 @@
+   <flag name='isa-serial'/>
+   <version>2008000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>255931</microcodeVersion>
+   <package> (v2.8.0)</package>
+   <arch>x86_64</arch>
+   <cpu type='kvm' name='host' usable='yes'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+index f5cf0ba932..aa0c833a0c 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.ppc64.xml
+@@ -178,6 +178,7 @@
+   <flag name='isa-serial'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>347135</microcodeVersion>
+   <package> (v2.9.0)</package>
+   <arch>ppc64</arch>
+   <cpu type='kvm' name='default'/>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml b/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
+index 5c4a02c8b1..ba809b6ae3 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.s390x.xml
+@@ -142,6 +142,7 @@
+   <flag name='disk-share-rw'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>265878</microcodeVersion>
+   <package></package>
+   <arch>s390x</arch>
+   <hostCPU type='kvm' model='z13.2-base' migratability='no'>
+diff --git a/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml b/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
+index 82cc4e79f4..11f2508a04 100644
+--- a/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
++++ b/tests/qemucapabilitiesdata/caps_2.9.0.x86_64.xml
+@@ -225,6 +225,7 @@
+   <flag name='isa-serial'/>
+   <version>2009000</version>
+   <kvmVersion>0</kvmVersion>
++  <microcodeVersion>321194</microcodeVersion>
+   <package> (v2.9.0)</package>
+   <arch>x86_64</arch>
+   <hostCPU type='kvm' model='base' migratability='yes'>
+diff --git a/tests/qemucapabilitiestest.c b/tests/qemucapabilitiestest.c
+index 6e39866ebe..44b3b1fda5 100644
+--- a/tests/qemucapabilitiestest.c
++++ b/tests/qemucapabilitiestest.c
+@@ -61,10 +61,16 @@ testQemuCaps(const void *opaque)
+                                   qemuMonitorTestGetMonitor(mon)) < 0)
+         goto cleanup;
+ 
+-    if (virQEMUCapsGet(capsActual, QEMU_CAPS_KVM) &&
+-        virQEMUCapsInitQMPMonitorTCG(capsActual,
+-                                     qemuMonitorTestGetMonitor(mon)) < 0)
+-        goto cleanup;
++    if (virQEMUCapsGet(capsActual, QEMU_CAPS_KVM)) {
++        if (virQEMUCapsInitQMPMonitorTCG(capsActual,
++                                         qemuMonitorTestGetMonitor(mon)) < 0)
++            goto cleanup;
++
++        /* Fill microcodeVersion with a "random" value which is the file
++         * length to provide a reproducible number for testing.
++         */
++        virQEMUCapsSetMicrocodeVersion(capsActual, virFileLength(repliesFile, -1));
++    }
+ 
+     if (!(actual = virQEMUCapsFormatCache(capsActual)))
+         goto cleanup;
+diff --git a/tests/qemucapsprobe.c b/tests/qemucapsprobe.c
+index 4b8d6229b4..a5f5a38b16 100644
+--- a/tests/qemucapsprobe.c
++++ b/tests/qemucapsprobe.c
+@@ -72,7 +72,7 @@ main(int argc, char **argv)
+         return EXIT_FAILURE;
+ 
+     if (!(caps = virQEMUCapsNewForBinaryInternal(VIR_ARCH_NONE, argv[1], "/tmp",
+-                                                 -1, -1, true)))
++                                                 -1, -1, 0, true)))
+         return EXIT_FAILURE;
+ 
+     virObjectUnref(caps);
+diff --git a/tests/testutilsqemu.c b/tests/testutilsqemu.c
+index 2c7124bf26..f8182033fc 100644
+--- a/tests/testutilsqemu.c
++++ b/tests/testutilsqemu.c
+@@ -603,7 +603,7 @@ int qemuTestDriverInit(virQEMUDriver *driver)
+ 
+     /* Using /dev/null for libDir and cacheDir automatically produces errors
+      * upon attempt to use any of them */
+-    driver->qemuCapsCache = virQEMUCapsCacheNew("/dev/null", "/dev/null", 0, 0);
++    driver->qemuCapsCache = virQEMUCapsCacheNew("/dev/null", "/dev/null", 0, 0, 0);
+     if (!driver->qemuCapsCache)
+         goto error;
+ 
+-- 
+2.15.1
+

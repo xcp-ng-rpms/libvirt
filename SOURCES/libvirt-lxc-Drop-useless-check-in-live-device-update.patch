@@ -1,0 +1,40 @@
+From 442ccfef325b73b201332c89cc53421f8299998e Mon Sep 17 00:00:00 2001
+Message-Id: <442ccfef325b73b201332c89cc53421f8299998e@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Thu, 22 Feb 2018 13:22:39 +0100
+Subject: [PATCH] lxc: Drop useless check in live device update
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Checking the new device definition makes little sense when lxc driver
+does not support live device update at all.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+(cherry picked from commit e3497f3fc895c427ce35188f3ddb2bb47a853be9)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1557922
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Ján Tomko <jtomko@redhat.com>
+---
+ src/lxc/lxc_driver.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/src/lxc/lxc_driver.c b/src/lxc/lxc_driver.c
+index b3f6f064f3..7829ef8618 100644
+--- a/src/lxc/lxc_driver.c
++++ b/src/lxc/lxc_driver.c
+@@ -4910,9 +4910,6 @@ static int lxcDomainUpdateDeviceFlags(virDomainPtr dom,
+     }
+ 
+     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
+-        if (virDomainDefCompatibleDevice(vm->def, dev_copy) < 0)
+-            goto endjob;
+-
+         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                        _("Unable to modify live devices"));
+ 
+-- 
+2.17.0
+

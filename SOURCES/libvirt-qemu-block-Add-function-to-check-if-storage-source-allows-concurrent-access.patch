@@ -1,0 +1,67 @@
+From a77029a7a8885902edbc0034c15c2a609a1093ba Mon Sep 17 00:00:00 2001
+Message-Id: <a77029a7a8885902edbc0034c15c2a609a1093ba@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Thu, 23 Nov 2017 19:02:18 +0100
+Subject: [PATCH] qemu: block: Add function to check if storage source allows
+ concurrent access
+
+Storage source format backing a shared device (e.g. running a cluster
+filesystem) needs to support the sharing so that metadata are not
+corrupted. Add a central function for checking this.
+
+(cherry picked from commit 1fc3cd8731640aefc48bbd9fc489f21cb99c6f67)
+
+ Conflicts:
+	src/qemu/qemu_block.c: context of one of the blockdev-add saga
+                               refactors not being backported
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1511480
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_block.c | 15 +++++++++++++++
+ src/qemu/qemu_block.h |  3 +++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/qemu/qemu_block.c b/src/qemu/qemu_block.c
+index 0761f89913..86fa565f39 100644
+--- a/src/qemu/qemu_block.c
++++ b/src/qemu/qemu_block.c
+@@ -390,6 +390,21 @@ qemuBlockGetNodeData(virJSONValuePtr data)
+ }
+ 
+ 
++/**
++ * qemuBlockStorageSourceSupportsConcurrentAccess:
++ * @src: disk storage source
++ *
++ * Returns true if the given storage format supports concurrent access from two
++ * separate processes.
++ */
++bool
++qemuBlockStorageSourceSupportsConcurrentAccess(virStorageSourcePtr src)
++{
++    /* no need to check in backing chain since only RAW storage supports this */
++    return src->format == VIR_STORAGE_FILE_RAW;
++}
++
++
+ /**
+  * qemuBlockStorageSourceBuildJSONSocketAddress
+  * @host: the virStorageNetHostDefPtr definition to build
+diff --git a/src/qemu/qemu_block.h b/src/qemu/qemu_block.h
+index f0a2c9aa7d..ebf3149ce8 100644
+--- a/src/qemu/qemu_block.h
++++ b/src/qemu/qemu_block.h
+@@ -53,6 +53,9 @@ qemuBlockNodeNamesDetect(virQEMUDriverPtr driver,
+ virHashTablePtr
+ qemuBlockGetNodeData(virJSONValuePtr data);
+ 
++bool
++qemuBlockStorageSourceSupportsConcurrentAccess(virStorageSourcePtr src);
++
+ virJSONValuePtr
+ qemuBlockStorageSourceGetBackendProps(virStorageSourcePtr src);
+ 
+-- 
+2.15.0
+

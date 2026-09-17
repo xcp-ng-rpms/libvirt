@@ -1,0 +1,38 @@
+From 569531d2a63be9a2e4d3c234b22391e7fcd8e5cc Mon Sep 17 00:00:00 2001
+Message-Id: <569531d2a63be9a2e4d3c234b22391e7fcd8e5cc@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Mon, 23 Nov 2015 12:46:36 +0100
+Subject: [PATCH] RHEL: qemu: Support vhost-user-multiqueue with QEMU 2.3
+
+RHEL-only
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1207692
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1284416
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_capabilities.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 10ec0d4bb9..37a58b3640 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -4761,8 +4761,11 @@ virQEMUCapsInitQMPMonitor(virQEMUCapsPtr qemuCaps,
+         virQEMUCapsSet(qemuCaps, QEMU_CAPS_CPU_AARCH64_OFF);
+ 
+     /* vhost-user supports multi-queue from v2.4.0 onwards,
+-     * but there is no way to query for that capability */
+-    if (qemuCaps->version >= 2004000)
++     * but there is no way to query for that capability
++     *
++     * RHEL-only: The change was back-ported to earlier QEMU version,
++     * particularly 2.3, in BZ 1276100 */
++    if (qemuCaps->version >= 2003000)
+         virQEMUCapsSet(qemuCaps, QEMU_CAPS_VHOSTUSER_MULTIQUEUE);
+ 
+     /* smm option is supported from v2.4.0 */
+-- 
+2.14.3
+

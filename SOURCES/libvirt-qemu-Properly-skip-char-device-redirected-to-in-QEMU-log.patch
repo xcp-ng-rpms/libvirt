@@ -1,0 +1,39 @@
+From 5071540b203f4e368506d4596b16484a8726d534 Mon Sep 17 00:00:00 2001
+Message-Id: <5071540b203f4e368506d4596b16484a8726d534@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Wed, 22 Nov 2017 10:19:12 +0100
+Subject: [PATCH] qemu: Properly skip "char device redirected to" in QEMU log
+
+When reading QEMU log for reporting it as an error message, we want to
+skip "char device redirected to" line. However, this string is not
+printed at the beginning of a line, which means STRPREFIX will never
+find it.
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 7e0cd26db475ed72257bd99be606ac8f2095231a)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1335534
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+---
+ src/qemu/qemu_process.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 86a4dee88e..c5fa8cb4b2 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -1847,7 +1847,7 @@ qemuProcessReadLog(qemuDomainLogContextPtr logCtxt, char **msg)
+     while ((eol = strchr(filter_next, '\n'))) {
+         *eol = '\0';
+         if (virLogProbablyLogMessage(filter_next) ||
+-            STRPREFIX(filter_next, "char device redirected to")) {
++            strstr(filter_next, "char device redirected to")) {
+             size_t skip = (eol + 1) - filter_next;
+             memmove(filter_next, eol + 1, buf + got - eol);
+             got -= skip;
+-- 
+2.15.0
+

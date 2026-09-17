@@ -1,0 +1,78 @@
+From 506c50ee610cae51d09bf7e26af850a395da0e1f Mon Sep 17 00:00:00 2001
+Message-Id: <506c50ee610cae51d09bf7e26af850a395da0e1f@dist-git>
+From: Andrea Bolognani <abologna@redhat.com>
+Date: Wed, 29 Nov 2017 16:23:10 +0100
+Subject: [PATCH] qemu: Format targetModel for serial devices
+
+Now that we've created a distinction between target type and target
+model, with the latter being the concrete device name, it's time to
+switch to formatting the model instead of the type.
+
+Signed-off-by: Andrea Bolognani <abologna@redhat.com>
+Reviewed-by: Pavel Hrdina <phrdina@redhat.com>
+(cherry picked from commit 7c76c30465ff6038df3b7aa27b40a3348ec599c9)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1449265
+https://bugzilla.redhat.com/show_bug.cgi?id=1511421
+https://bugzilla.redhat.com/show_bug.cgi?id=1512929
+https://bugzilla.redhat.com/show_bug.cgi?id=1512934
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_command.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 8142834afd..7fd2afb1e0 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -10346,8 +10346,8 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+                               serial->info.alias);
+         }
+     } else {
+-        switch ((virDomainChrSerialTargetType) serial->targetType) {
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
++        switch ((virDomainChrSerialTargetModel) serial->targetModel) {
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL:
+             if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_USB_SERIAL)) {
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                                _("usb-serial is not supported in this QEMU binary"));
+@@ -10355,10 +10355,10 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+             }
+             break;
+ 
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL:
+             break;
+ 
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL:
+             if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_PCI_SERIAL)) {
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                                _("pci-serial is not supported with this QEMU binary"));
+@@ -10366,19 +10366,19 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
+             }
+             break;
+ 
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
+-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE:
++        case VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_LAST:
+             /* Except from _LAST, which is just a guard value and will never
+              * be used, all of the above are platform devices, which means
+              * qemuBuildSerialCommandLine() will have taken the appropriate
+              * branch and we will not have ended up here. */
+             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+-                           _("Invalid target type for serial device"));
++                           _("Invalid target model for serial device"));
+             goto error;
+         }
+ 
+         virBufferAsprintf(&cmd, "%s,chardev=char%s,id=%s",
+-                          virDomainChrSerialTargetTypeToString(serial->targetType),
++                          virDomainChrSerialTargetModelTypeToString(serial->targetModel),
+                           serial->info.alias, serial->info.alias);
+     }
+ 
+-- 
+2.15.1
+

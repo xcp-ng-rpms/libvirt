@@ -1,0 +1,135 @@
+From fbecdf5ed4345a15d1ffc30922d44272a3d60368 Mon Sep 17 00:00:00 2001
+Message-Id: <fbecdf5ed4345a15d1ffc30922d44272a3d60368@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Fri, 2 Feb 2018 15:21:27 +0100
+Subject: [PATCH] util: Clear unused part of the map in virBitmapShrink
+
+Some of the other functions depend on the fact that unused bits and longs are
+always zero and it's less error-prone to clear it than fix the other functions.
+It's enough to zero out one piece of the map since we're calling realloc() to
+get rid of the rest (and updating map_len).
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1540817
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit d6e582da80d07a90f154dc27aca239d44fc2b7b7)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/conf/domain_conf.c |  4 +++-
+ src/util/virbitmap.c   | 30 ++++++++++++++++++++++--------
+ src/util/virbitmap.h   |  2 +-
+ src/util/virresctrl.c  |  3 ++-
+ tests/virbitmaptest.c  |  8 ++++++++
+ 5 files changed, 36 insertions(+), 11 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 181b035647..0af3dd5ab6 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -18365,7 +18365,9 @@ virDomainCachetuneDefParse(virDomainDefPtr def,
+ 
+     /* We need to limit the bitmap to number of vCPUs.  If there's nothing left,
+      * then we can just clean up and return 0 immediately */
+-    virBitmapShrink(vcpus, def->maxvcpus);
++    if (virBitmapShrink(vcpus, def->maxvcpus) < 0)
++        goto cleanup;
++
+     if (virBitmapIsAllClear(vcpus)) {
+         ret = 0;
+         goto cleanup;
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index b2c5c7a6a5..33cae2f305 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -1201,21 +1201,35 @@ virBitmapSubtract(virBitmapPtr a,
+ /**
+  * virBitmapShrink:
+  * @map: Pointer to bitmap
+- * @b: last bit position to be excluded from bitmap
++ * @b: Size to reduce the bitmap to
+  *
+- * Resizes the bitmap so that no more than @b bits will fit into it.  Nothing
+- * will change if the size is already smaller than @b.
+- *
+- * NB: Does not adjust the map->map_len so that a subsequent virBitmapExpand
+- * doesn't necessarily need to reallocate.
++ * Reduces the bitmap to size @b.  Nothing will change if the size is already
++ * smaller than or equal to @b.
+  */
+-void
++int
+ virBitmapShrink(virBitmapPtr map,
+                 size_t b)
+ {
++    size_t nl = 0;
++    size_t nb = 0;
++
+     if (!map)
+-        return;
++        return 0;
+ 
+     if (map->max_bit >= b)
+         map->max_bit = b;
++
++    nl = map->max_bit / VIR_BITMAP_BITS_PER_UNIT;
++    nb = map->max_bit % VIR_BITMAP_BITS_PER_UNIT;
++    map->map[nl] &= ((1UL << nb) - 1);
++
++    nl++;
++    if (nl == map->map_len)
++        return 0;
++
++    if (VIR_REALLOC_N(map->map, nl) < 0)
++        return -1;
++
++    map->map_len = nl;
++    return 0;
+ }
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index 2464814055..5a3362a19f 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -153,6 +153,6 @@ void virBitmapIntersect(virBitmapPtr a, virBitmapPtr b)
+ void virBitmapSubtract(virBitmapPtr a, virBitmapPtr b)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+ 
+-void virBitmapShrink(virBitmapPtr map, size_t b);
++int virBitmapShrink(virBitmapPtr map, size_t b);
+ 
+ #endif
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index 70426199ce..ef388757a7 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -941,7 +941,8 @@ virResctrlAllocParseProcessCache(virResctrlInfoPtr resctrl,
+     if (!mask)
+         return -1;
+ 
+-    virBitmapShrink(mask, resctrl->levels[level]->types[type]->bits);
++    if (virBitmapShrink(mask, resctrl->levels[level]->types[type]->bits) < 0)
++        goto cleanup;
+ 
+     if (virResctrlAllocUpdateMask(alloc, level, type, cache_id, mask) < 0)
+         goto cleanup;
+diff --git a/tests/virbitmaptest.c b/tests/virbitmaptest.c
+index 5bf30b2b1c..a78e4da723 100644
+--- a/tests/virbitmaptest.c
++++ b/tests/virbitmaptest.c
+@@ -656,6 +656,14 @@ test12(const void *opaque ATTRIBUTE_UNUSED)
+ 
+     TEST_MAP(1024, "34,1023");
+ 
++    if (virBitmapShrink(map, 35) < 0)
++        goto cleanup;
++    TEST_MAP(35, "34");
++
++    if (virBitmapShrink(map, 34) < 0)
++        goto cleanup;
++    TEST_MAP(34, "");
++
+     ret = 0;
+ 
+  cleanup:
+-- 
+2.16.1
+

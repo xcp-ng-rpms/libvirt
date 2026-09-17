@@ -1,0 +1,40 @@
+From cf8fcc97c173618534874046d2f29d4135cf2441 Mon Sep 17 00:00:00 2001
+Message-Id: <cf8fcc97c173618534874046d2f29d4135cf2441@dist-git>
+From: Peter Krempa <pkrempa@redhat.com>
+Date: Fri, 8 Dec 2017 10:27:03 +0100
+Subject: [PATCH] qemu: blockjob: Reset disk source index after pivot
+
+Since we are re-detecting the backing chain after pivoting to the active
+block commit target (or block copy target) the disk index needs to be
+reset to 0. This is necessary since we move a member of the backing
+chain to disk->src but clear indexes only starting from
+disk->src->backingStore. The freshly detected images have indexes
+starting from 1, but since we've pivoted into an image which was
+previously a backing store it would have a non-0 index.
+The lookup function would then return the top of the chain for queries
+like 'vda[1]' instead of the first backing store.
+
+This problem will not be present once we keep the disk indexes stable.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1519745
+(cherry picked from commit fac8724ceb371f962d5d185c639456a34d71659e)
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_blockjob.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/qemu/qemu_blockjob.c b/src/qemu/qemu_blockjob.c
+index c1b46f7d0a..afc05f161c 100644
+--- a/src/qemu/qemu_blockjob.c
++++ b/src/qemu/qemu_blockjob.c
+@@ -165,6 +165,7 @@ qemuBlockJobEventProcess(virQEMUDriverPtr driver,
+         disk->mirror = NULL;
+         disk->mirrorState = VIR_DOMAIN_DISK_MIRROR_STATE_NONE;
+         disk->mirrorJob = VIR_DOMAIN_BLOCK_JOB_TYPE_UNKNOWN;
++        disk->src->id = 0;
+         ignore_value(qemuDomainDetermineDiskChain(driver, vm, disk,
+                                                   true, true));
+         ignore_value(qemuBlockNodeNamesDetect(driver, vm, asyncJob));
+-- 
+2.15.1
+

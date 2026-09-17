@@ -1,0 +1,98 @@
+From ac8540f237280b2e302949f15d229e13477245c7 Mon Sep 17 00:00:00 2001
+Message-Id: <ac8540f237280b2e302949f15d229e13477245c7@dist-git>
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 12 Dec 2017 16:23:41 +0100
+Subject: [PATCH] util: introduce virHostCPUGetMicrocodeVersion
+
+This new API reads host's CPU microcode version from /proc/cpuinfo.
+
+Unfortunately, there is no other way of reading microcode version which
+would be usable from both system and session daemon.
+
+CVE-2017-5715
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/libvirt_private.syms |  1 +
+ src/util/virhostcpu.c    | 43 +++++++++++++++++++++++++++++++++++++++++++
+ src/util/virhostcpu.h    |  2 ++
+ 3 files changed, 46 insertions(+)
+
+diff --git a/src/libvirt_private.syms b/src/libvirt_private.syms
+index 85b15314a9..57999e77b0 100644
+--- a/src/libvirt_private.syms
++++ b/src/libvirt_private.syms
+@@ -1861,6 +1861,7 @@ virHostCPUGetCount;
+ virHostCPUGetInfo;
+ virHostCPUGetKVMMaxVCPUs;
+ virHostCPUGetMap;
++virHostCPUGetMicrocodeVersion;
+ virHostCPUGetOnline;
+ virHostCPUGetOnlineBitmap;
+ virHostCPUGetPresentBitmap;
+diff --git a/src/util/virhostcpu.c b/src/util/virhostcpu.c
+index bd58aa43df..a7ae7cd4cb 100644
+--- a/src/util/virhostcpu.c
++++ b/src/util/virhostcpu.c
+@@ -1211,3 +1211,46 @@ virHostCPUGetKVMMaxVCPUs(void)
+     return -1;
+ }
+ #endif /* HAVE_LINUX_KVM_H */
++
++
++#ifdef __linux__
++
++unsigned int
++virHostCPUGetMicrocodeVersion(void)
++{
++    char *outbuf = NULL;
++    char *cur;
++    unsigned int version = 0;
++
++    if (virFileReadHeaderQuiet(CPUINFO_PATH, 4096, &outbuf) < 0) {
++        char ebuf[1024];
++        VIR_DEBUG("Failed to read microcode version from %s: %s",
++                  CPUINFO_PATH, virStrerror(errno, ebuf, sizeof(ebuf)));
++        return 0;
++    }
++
++    /* Account for format 'microcode    : XXXX'*/
++    if (!(cur = strstr(outbuf, "microcode")) ||
++        !(cur = strchr(cur, ':')))
++        goto cleanup;
++    cur++;
++
++    /* Linux places the microcode revision in a 32-bit integer, so
++     * ui is fine for us too.  */
++    if (virStrToLong_ui(cur, &cur, 0, &version) < 0)
++        goto cleanup;
++
++ cleanup:
++    VIR_FREE(outbuf);
++    return version;
++}
++
++#else
++
++unsigned int
++virHostCPUGetMicrocodeVersion(void)
++{
++    return 0;
++}
++
++#endif
+diff --git a/src/util/virhostcpu.h b/src/util/virhostcpu.h
+index 67033de842..f9f3359288 100644
+--- a/src/util/virhostcpu.h
++++ b/src/util/virhostcpu.h
+@@ -66,4 +66,6 @@ virBitmapPtr virHostCPUGetSiblingsList(unsigned int cpu);
+ 
+ int virHostCPUGetOnline(unsigned int cpu, bool *online);
+ 
++unsigned int virHostCPUGetMicrocodeVersion(void);
++
+ #endif /* __VIR_HOSTCPU_H__*/
+-- 
+2.15.1
+

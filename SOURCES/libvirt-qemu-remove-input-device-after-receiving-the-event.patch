@@ -1,0 +1,46 @@
+From 4f65cfb51fcef877737edeb75f4a06a9988e592e Mon Sep 17 00:00:00 2001
+Message-Id: <4f65cfb51fcef877737edeb75f4a06a9988e592e@dist-git>
+From: =?UTF-8?q?J=C3=A1n=20Tomko?= <jtomko@redhat.com>
+Date: Thu, 14 Dec 2017 17:01:33 +0100
+Subject: [PATCH] qemu: remove input device after receiving the event
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Also call qemuDomainRemoveInputDevice if we receive the
+event after the Detach API ends.
+
+Commit 67486bb failed to include this.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1524837
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Reviewed-by: Erik Skultety <eskultet@redhat.com>
+(cherry picked from commit 8d51042ef873d2a868d505f0eff32346ba041a95)
+Signed-off-by: Ján Tomko <jtomko@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/qemu/qemu_hotplug.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index eab9ad794a..f1056627f2 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -4368,10 +4368,13 @@ qemuDomainRemoveDevice(virQEMUDriverPtr driver,
+         ret = qemuDomainRemoveShmemDevice(driver, vm, dev->data.shmem);
+         break;
+ 
++    case VIR_DOMAIN_DEVICE_INPUT:
++        ret = qemuDomainRemoveInputDevice(vm, dev->data.input);
++        break;
++
+     case VIR_DOMAIN_DEVICE_NONE:
+     case VIR_DOMAIN_DEVICE_LEASE:
+     case VIR_DOMAIN_DEVICE_FS:
+-    case VIR_DOMAIN_DEVICE_INPUT:
+     case VIR_DOMAIN_DEVICE_SOUND:
+     case VIR_DOMAIN_DEVICE_VIDEO:
+     case VIR_DOMAIN_DEVICE_WATCHDOG:
+-- 
+2.15.1
+

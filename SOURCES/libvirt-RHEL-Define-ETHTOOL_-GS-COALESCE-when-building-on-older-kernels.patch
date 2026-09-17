@@ -1,0 +1,62 @@
+From c6e5d4660e094d9377300d76873545ef73886e0a Mon Sep 17 00:00:00 2001
+Message-Id: <c6e5d4660e094d9377300d76873545ef73886e0a@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Tue, 25 Apr 2017 13:41:21 +0200
+Subject: [PATCH] RHEL: Define ETHTOOL_[GS]COALESCE when building on older
+ kernels
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1414627
+
+RHEL-only (upstream will have this only when built on kernel that
+supports it).
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/util/virnetdev.c | 23 ++++++++---------------
+ 1 file changed, 8 insertions(+), 15 deletions(-)
+
+diff --git a/src/util/virnetdev.c b/src/util/virnetdev.c
+index 41ef65d882..4a63fe9af9 100644
+--- a/src/util/virnetdev.c
++++ b/src/util/virnetdev.c
+@@ -3350,7 +3350,14 @@ virNetDevGetEthtoolGFeatures(virBitmapPtr bitmap ATTRIBUTE_UNUSED,
+ # endif
+ 
+ 
+-# if HAVE_DECL_ETHTOOL_SCOALESCE && HAVE_DECL_ETHTOOL_GCOALESCE
++/* Workaround for binary distributions building on old kernels */
++# ifndef ETHTOOL_GCOALESCE
++#  define ETHTOOL_GCOALESCE 0x0000000e
++# endif
++# ifndef ETHTOOL_SCOALESCE
++#  define ETHTOOL_SCOALESCE 0x0000000f
++# endif
++
+ /**
+  * virNetDevSetCoalesce:
+  * @ifname: interface name to modify
+@@ -3450,20 +3457,6 @@ int virNetDevSetCoalesce(const char *ifname,
+     VIR_FORCE_CLOSE(fd);
+     return ret;
+ }
+-# else
+-int virNetDevSetCoalesce(const char *ifname,
+-                         virNetDevCoalescePtr coalesce,
+-                         bool update)
+-{
+-    if (!coalesce && !update)
+-        return 0;
+-
+-    virReportSystemError(ENOSYS,
+-                         _("Cannot set coalesce info on interface '%s'"),
+-                         ifname);
+-    return -1;
+-}
+-# endif
+ 
+ 
+ /**
+-- 
+2.14.3
+

@@ -1,0 +1,35 @@
+From a4c7051325a78ece1923633d734903f1596a80d6 Mon Sep 17 00:00:00 2001
+Message-Id: <a4c7051325a78ece1923633d734903f1596a80d6@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:37 +0100
+Subject: [PATCH] util: Make it possible for virResctrlAllocSetMask to replace
+ existing mask
+
+This wil be used in the future, but it makes sense for now as well.  It makes
+sure there is no mask leftover that would leak.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+(cherry picked from commit 6899118043ec4e6bd35f1641fe71dc67bfce3859)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/util/virresctrl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/util/virresctrl.c b/src/util/virresctrl.c
+index a1d09c547e..89b1382b68 100644
+--- a/src/util/virresctrl.c
++++ b/src/util/virresctrl.c
+@@ -1239,6 +1239,7 @@ virResctrlAllocSetMask(virResctrlAllocPerTypePtr a_type,
+                      cache - a_type->nmasks + 1) < 0)
+         return -1;
+ 
++    virBitmapFree(a_type->masks[cache]);
+     a_type->masks[cache] = mask;
+ 
+     return 0;
+-- 
+2.16.1
+

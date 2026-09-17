@@ -1,0 +1,34 @@
+From 111f9cb4bd22a68c50237e52190663c3f43a66ee Mon Sep 17 00:00:00 2001
+Message-Id: <111f9cb4bd22a68c50237e52190663c3f43a66ee@dist-git>
+From: Jiri Denemark <jdenemar@redhat.com>
+Date: Fri, 5 Jan 2018 17:40:30 +0100
+Subject: [PATCH] RHEL: cpu: Fix EPYC-IBRS CPU model
+
+It is spelled as EPYC-IBPB in QEMU.
+
+RHEL-only, upstream patches were sent for review with this patch
+squashed in.
+
+CVE-2017-5715
+
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/cpu/cpu_map.xml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/cpu/cpu_map.xml b/src/cpu/cpu_map.xml
+index a7888ec134..4d786f1e0a 100644
+--- a/src/cpu/cpu_map.xml
++++ b/src/cpu/cpu_map.xml
+@@ -1754,7 +1754,7 @@
+       <feature name='xsavec'/>
+       <feature name='xsaveopt'/>
+     </model>
+-    <model name='EPYC-IBRS'>
++    <model name='EPYC-IBPB'>
+       <model name='EPYC'/>
+       <feature name='ibpb'/>
+     </model>
+-- 
+2.15.1
+

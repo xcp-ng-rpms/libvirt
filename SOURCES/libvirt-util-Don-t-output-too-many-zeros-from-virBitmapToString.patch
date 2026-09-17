@@ -1,0 +1,118 @@
+From 86761c187660d73daed649c6be28502aa5e01a14 Mon Sep 17 00:00:00 2001
+Message-Id: <86761c187660d73daed649c6be28502aa5e01a14@dist-git>
+From: Martin Kletzander <mkletzan@redhat.com>
+Date: Wed, 31 Jan 2018 16:32:13 +0100
+Subject: [PATCH] util: Don't output too many zeros from virBitmapToString
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1289368
+
+Truncate the output so that it is only as big as is needed to fit all
+the bits, not all the units from the map.  This will be needed in the
+future in order to properly format bitmaps for kernel's sysfs files.
+
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+Reviewed-by: John Ferlan <jferlan@redhat.com>
+(cherry picked from commit fb106028752d8bd31f48a7c50357b7437b87d7c1)
+Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_capabilities.c |  4 ++--
+ src/util/virbitmap.c         | 30 ++++++++++++++++++++++++++++--
+ src/util/virbitmap.h         |  2 +-
+ 3 files changed, 31 insertions(+), 5 deletions(-)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 5bf188f427..dc546ba702 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -1525,7 +1525,7 @@ int virQEMUCapsParseHelpStr(const char *qemu,
+                                    qemuCaps, check_yajl) < 0)
+         goto cleanup;
+ 
+-    strflags = virBitmapToString(qemuCaps->flags, true);
++    strflags = virBitmapToString(qemuCaps->flags, true, false);
+     VIR_DEBUG("Version %u.%u.%u, cooked version %u, flags %s",
+               major, minor, micro, *version, NULLSTR(strflags));
+     VIR_FREE(strflags);
+@@ -2407,7 +2407,7 @@ virQEMUCapsClear(virQEMUCapsPtr qemuCaps,
+ 
+ char *virQEMUCapsFlagsString(virQEMUCapsPtr qemuCaps)
+ {
+-    return virBitmapToString(qemuCaps->flags, true);
++    return virBitmapToString(qemuCaps->flags, true, false);
+ }
+ 
+ 
+diff --git a/src/util/virbitmap.c b/src/util/virbitmap.c
+index f5700a6424..b1c1236fd3 100644
+--- a/src/util/virbitmap.c
++++ b/src/util/virbitmap.c
+@@ -313,6 +313,7 @@ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+  * virBitmapToString:
+  * @bitmap: Pointer to bitmap
+  * @prefix: Whether to prepend "0x"
++ * @trim: Whether to output only the minimum required characters
+  *
+  * Convert @bitmap to printable string.
+  *
+@@ -320,10 +321,14 @@ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+  */
+ char *
+ virBitmapToString(virBitmapPtr bitmap,
+-                  bool prefix)
++                  bool prefix,
++                  bool trim)
+ {
+     virBuffer buf = VIR_BUFFER_INITIALIZER;
+     size_t sz;
++    size_t len;
++    size_t diff;
++    char *ret = NULL;
+ 
+     if (prefix)
+         virBufferAddLit(&buf, "0x");
+@@ -337,7 +342,28 @@ virBitmapToString(virBitmapPtr bitmap,
+     }
+ 
+     virBufferCheckError(&buf);
+-    return virBufferContentAndReset(&buf);
++    ret = virBufferContentAndReset(&buf);
++    if (!ret)
++        return NULL;
++
++    if (!trim)
++        return ret;
++
++    if (bitmap->max_bit != bitmap->map_len * VIR_BITMAP_BITS_PER_UNIT) {
++        char *tmp = ret;
++
++        if (prefix)
++            tmp += 2;
++
++        len = strlen(tmp);
++        sz = VIR_DIV_UP(bitmap->max_bit, 4);
++        diff = len - sz;
++
++        if (diff)
++            memmove(tmp, tmp + diff, sz + 1);
++    }
++
++    return ret;
+ }
+ 
+ /**
+diff --git a/src/util/virbitmap.h b/src/util/virbitmap.h
+index 720b389cfe..02acb7519d 100644
+--- a/src/util/virbitmap.h
++++ b/src/util/virbitmap.h
+@@ -80,7 +80,7 @@ bool virBitmapIsBitSet(virBitmapPtr bitmap, size_t b)
+ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+ 
+-char *virBitmapToString(virBitmapPtr bitmap, bool prefix)
++char *virBitmapToString(virBitmapPtr bitmap, bool prefix, bool trim)
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
+ 
+ char *virBitmapFormat(virBitmapPtr bitmap);
+-- 
+2.16.1
+

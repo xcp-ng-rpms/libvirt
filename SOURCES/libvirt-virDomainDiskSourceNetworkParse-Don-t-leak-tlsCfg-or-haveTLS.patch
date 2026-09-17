@@ -1,0 +1,46 @@
+From e795a37abe3dab75cfb48d9b514cd3d42a2b7722 Mon Sep 17 00:00:00 2001
+Message-Id: <e795a37abe3dab75cfb48d9b514cd3d42a2b7722@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 1 Dec 2017 15:48:37 +0100
+Subject: [PATCH] virDomainDiskSourceNetworkParse: Don't leak @tlsCfg or
+ @haveTLS
+
+==861== 3 bytes in 1 blocks are definitely lost in loss record 3 of 168
+==861==    at 0x4C2AEDF: malloc (vg_replace_malloc.c:299)
+==861==    by 0x8C7FBC8: xmlStrndup (in /usr/lib64/libxml2.so.2.9.4)
+==861==    by 0x5DCCDC2: virXMLPropString (virxml.c:510)
+==861==    by 0x5DF1232: virDomainDiskSourceNetworkParse (domain_conf.c:8445)
+==861==    by 0x5DF1728: virDomainDiskSourceParse (domain_conf.c:8576)
+==861==    by 0x5DF41A5: virDomainDiskDefParseXML (domain_conf.c:9238)
+==861==    by 0x5E1119F: virDomainDefParseXML (domain_conf.c:19233)
+==861==    by 0x5E146EE: virDomainDefParseNode (domain_conf.c:20083)
+==861==    by 0x5E14540: virDomainDefParse (domain_conf.c:20027)
+==861==    by 0x5E145E6: virDomainDefParseFile (domain_conf.c:20053)
+==861==    by 0x4053CC: testCompareXMLToArgv (qemuxml2argvtest.c:455)
+==861==    by 0x41F135: virTestRun (testutils.c:180)
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+(cherry picked from commit 7d7c01b4580f471e1376e30d4092dcf45cfe0ccc)
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1519759
+Signed-off-by: Jiri Denemark <jdenemar@redhat.com>
+---
+ src/conf/domain_conf.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index ec138ea861..3bb66e4326 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -8489,6 +8489,8 @@ virDomainDiskSourceNetworkParse(xmlNodePtr node,
+     ret = 0;
+ 
+  cleanup:
++    VIR_FREE(tlsCfg);
++    VIR_FREE(haveTLS);
+     VIR_FREE(protocol);
+     return ret;
+ }
+-- 
+2.15.1
+

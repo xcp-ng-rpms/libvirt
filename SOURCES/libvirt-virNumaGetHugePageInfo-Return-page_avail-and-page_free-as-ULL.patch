@@ -1,0 +1,232 @@
+From 0c98909e23aa8d3340b5752f2e774c9c966ff131 Mon Sep 17 00:00:00 2001
+Message-Id: <0c98909e23aa8d3340b5752f2e774c9c966ff131@dist-git>
+From: Michal Privoznik <mprivozn@redhat.com>
+Date: Fri, 25 May 2018 14:44:04 +0200
+Subject: [PATCH] virNumaGetHugePageInfo: Return page_avail and page_free as
+ ULL
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RHEL-7.6: https://bugzilla.redhat.com/show_bug.cgi?id=1569678
+RHEL-7.5.z: https://bugzilla.redhat.com/show_bug.cgi?id=1582418
+
+On some large systems (with ~400GB of RAM) it is possible for
+unsigned int to overflow in which case we report invalid number
+of 4K pages pool size. Switch to unsigned long long.
+
+We hit overflow in virNumaGetPages when doing:
+
+    huge_page_sum += 1024 * page_size * page_avail;
+
+because although 'huge_page_sum' is an unsigned long long, the
+page_size and page_avail are both unsigned int, so the promotion
+to unsigned long long doesn't happen until the sum has been
+calculated, by which time we've already overflowed.
+
+Turning page_avail into a unsigned long long is not strictly
+needed until we need ability to represent more than 2^32
+4k pages, which equates to 16 TB of RAM. That's not
+outside the realm of possibility, so makes sense that we
+change it to unsigned long long to avoid future problems.
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit 31daccf5a550e7ede35532004006b34ba5c5b92e)
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+---
+ src/conf/capabilities.c |  5 +++--
+ src/conf/capabilities.h |  2 +-
+ src/util/virhostmem.c   |  2 +-
+ src/util/virnuma.c      | 32 ++++++++++++++++++--------------
+ src/util/virnuma.h      |  8 ++++----
+ tests/virnumamock.c     |  4 ++--
+ 6 files changed, 29 insertions(+), 24 deletions(-)
+
+diff --git a/src/conf/capabilities.c b/src/conf/capabilities.c
+index edf9f54f77..66e2ecd151 100644
+--- a/src/conf/capabilities.c
++++ b/src/conf/capabilities.c
+@@ -819,7 +819,7 @@ virCapabilitiesFormatNUMATopology(virBufferPtr buf,
+                               cells[i]->mem);
+ 
+         for (j = 0; j < cells[i]->npageinfo; j++) {
+-            virBufferAsprintf(buf, "<pages unit='KiB' size='%u'>%zu</pages>\n",
++            virBufferAsprintf(buf, "<pages unit='KiB' size='%u'>%llu</pages>\n",
+                               cells[i]->pageinfo[j].size,
+                               cells[i]->pageinfo[j].avail);
+         }
+@@ -1354,7 +1354,8 @@ virCapabilitiesGetNUMAPagesInfo(int node,
+                                 int *npageinfo)
+ {
+     int ret = -1;
+-    unsigned int *pages_size = NULL, *pages_avail = NULL;
++    unsigned int *pages_size = NULL;
++    unsigned long long *pages_avail = NULL;
+     size_t npages, i;
+ 
+     if (virNumaGetPages(node, &pages_size, &pages_avail, NULL, &npages) < 0)
+diff --git a/src/conf/capabilities.h b/src/conf/capabilities.h
+index 694a3590bf..f0a06a24df 100644
+--- a/src/conf/capabilities.h
++++ b/src/conf/capabilities.h
+@@ -107,7 +107,7 @@ typedef struct _virCapsHostNUMACellPageInfo virCapsHostNUMACellPageInfo;
+ typedef virCapsHostNUMACellPageInfo *virCapsHostNUMACellPageInfoPtr;
+ struct _virCapsHostNUMACellPageInfo {
+     unsigned int size;      /* page size in kibibytes */
+-    size_t avail;           /* the size of pool */
++    unsigned long long avail;           /* the size of pool */
+ };
+ 
+ typedef struct _virCapsHostNUMACell virCapsHostNUMACell;
+diff --git a/src/util/virhostmem.c b/src/util/virhostmem.c
+index a9ba2784ac..a795720954 100644
+--- a/src/util/virhostmem.c
++++ b/src/util/virhostmem.c
+@@ -775,7 +775,7 @@ virHostMemGetFreePages(unsigned int npages,
+     for (cell = startCell; cell <= lastCell; cell++) {
+         for (i = 0; i < npages; i++) {
+             unsigned int page_size = pages[i];
+-            unsigned int page_free;
++            unsigned long long page_free;
+ 
+             if (virNumaGetPageInfo(cell, page_size, 0, NULL, &page_free) < 0)
+                 goto cleanup;
+diff --git a/src/util/virnuma.c b/src/util/virnuma.c
+index bebe301f8d..784db0a7ce 100644
+--- a/src/util/virnuma.c
++++ b/src/util/virnuma.c
+@@ -563,8 +563,8 @@ virNumaGetHugePageInfoDir(char **path, int node)
+ static int
+ virNumaGetHugePageInfo(int node,
+                        unsigned int page_size,
+-                       unsigned int *page_avail,
+-                       unsigned int *page_free)
++                       unsigned long long *page_avail,
++                       unsigned long long *page_free)
+ {
+     int ret = -1;
+     char *path = NULL;
+@@ -579,7 +579,7 @@ virNumaGetHugePageInfo(int node,
+         if (virFileReadAll(path, 1024, &buf) < 0)
+             goto cleanup;
+ 
+-        if (virStrToLong_ui(buf, &end, 10, page_avail) < 0 ||
++        if (virStrToLong_ull(buf, &end, 10, page_avail) < 0 ||
+             *end != '\n') {
+             virReportError(VIR_ERR_INTERNAL_ERROR,
+                            _("unable to parse: %s"),
+@@ -598,7 +598,7 @@ virNumaGetHugePageInfo(int node,
+         if (virFileReadAll(path, 1024, &buf) < 0)
+             goto cleanup;
+ 
+-        if (virStrToLong_ui(buf, &end, 10, page_free) < 0 ||
++        if (virStrToLong_ull(buf, &end, 10, page_free) < 0 ||
+             *end != '\n') {
+             virReportError(VIR_ERR_INTERNAL_ERROR,
+                            _("unable to parse: %s"),
+@@ -645,8 +645,8 @@ int
+ virNumaGetPageInfo(int node,
+                    unsigned int page_size,
+                    unsigned long long huge_page_sum,
+-                   unsigned int *page_avail,
+-                   unsigned int *page_free)
++                   unsigned long long *page_avail,
++                   unsigned long long *page_free)
+ {
+     int ret = -1;
+     long system_page_size = virGetSystemPageSize();
+@@ -709,8 +709,8 @@ virNumaGetPageInfo(int node,
+ int
+ virNumaGetPages(int node,
+                 unsigned int **pages_size,
+-                unsigned int **pages_avail,
+-                unsigned int **pages_free,
++                unsigned long long **pages_avail,
++                unsigned long long **pages_free,
+                 size_t *npages)
+ {
+     int ret = -1;
+@@ -718,7 +718,9 @@ virNumaGetPages(int node,
+     DIR *dir = NULL;
+     int direrr = 0;
+     struct dirent *entry;
+-    unsigned int *tmp_size = NULL, *tmp_avail = NULL, *tmp_free = NULL;
++    unsigned int *tmp_size = NULL;
++    unsigned long long *tmp_avail = NULL;
++    unsigned long long *tmp_free = NULL;
+     unsigned int ntmp = 0;
+     size_t i;
+     bool exchange;
+@@ -744,7 +746,9 @@ virNumaGetPages(int node,
+ 
+     while (dir && (direrr = virDirRead(dir, &entry, path)) > 0) {
+         const char *page_name = entry->d_name;
+-        unsigned int page_size, page_avail = 0, page_free = 0;
++        unsigned int page_size;
++        unsigned long long page_avail = 0;
++        unsigned long long page_free = 0;
+         char *end;
+ 
+         /* Just to give you a hint, we're dealing with this:
+@@ -934,8 +938,8 @@ int
+ virNumaGetPageInfo(int node ATTRIBUTE_UNUSED,
+                    unsigned int page_size ATTRIBUTE_UNUSED,
+                    unsigned long long huge_page_sum ATTRIBUTE_UNUSED,
+-                   unsigned int *page_avail ATTRIBUTE_UNUSED,
+-                   unsigned int *page_free ATTRIBUTE_UNUSED)
++                   unsigned long long *page_avail ATTRIBUTE_UNUSED,
++                   unsigned long long *page_free ATTRIBUTE_UNUSED)
+ {
+     virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                    _("page info is not supported on this platform"));
+@@ -946,8 +950,8 @@ virNumaGetPageInfo(int node ATTRIBUTE_UNUSED,
+ int
+ virNumaGetPages(int node ATTRIBUTE_UNUSED,
+                 unsigned int **pages_size ATTRIBUTE_UNUSED,
+-                unsigned int **pages_avail ATTRIBUTE_UNUSED,
+-                unsigned int **pages_free ATTRIBUTE_UNUSED,
++                unsigned long long **pages_avail ATTRIBUTE_UNUSED,
++                unsigned long long **pages_free ATTRIBUTE_UNUSED,
+                 size_t *npages ATTRIBUTE_UNUSED)
+ {
+     virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+diff --git a/src/util/virnuma.h b/src/util/virnuma.h
+index e4e1fd0b97..a3ffb6d6c7 100644
+--- a/src/util/virnuma.h
++++ b/src/util/virnuma.h
+@@ -52,12 +52,12 @@ int virNumaGetNodeCPUs(int node, virBitmapPtr *cpus) ATTRIBUTE_NOINLINE;
+ int virNumaGetPageInfo(int node,
+                        unsigned int page_size,
+                        unsigned long long huge_page_sum,
+-                       unsigned int *page_avail,
+-                       unsigned int *page_free);
++                       unsigned long long *page_avail,
++                       unsigned long long *page_free);
+ int virNumaGetPages(int node,
+                     unsigned int **pages_size,
+-                    unsigned int **pages_avail,
+-                    unsigned int **pages_free,
++                    unsigned long long **pages_avail,
++                    unsigned long long **pages_free,
+                     size_t *npages)
+     ATTRIBUTE_NONNULL(5) ATTRIBUTE_NOINLINE;
+ int virNumaSetPagePoolSize(int node,
+diff --git a/tests/virnumamock.c b/tests/virnumamock.c
+index d8f90b81b3..475efc1f34 100644
+--- a/tests/virnumamock.c
++++ b/tests/virnumamock.c
+@@ -125,8 +125,8 @@ virNumaGetDistances(int node ATTRIBUTE_UNUSED,
+ int
+ virNumaGetPages(int node,
+                 unsigned int **pages_size,
+-                unsigned int **pages_avail,
+-                unsigned int **pages_free,
++                unsigned long long **pages_avail,
++                unsigned long long **pages_free,
+                 size_t *npages)
+ {
+     const int pages_def[] = { 4, 2 * 1024, 1 * 1024 * 1024};
+-- 
+2.17.1
+
